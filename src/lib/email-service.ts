@@ -1,5 +1,5 @@
 import nodemailer from 'nodemailer';
-import { SmtpConfig, MatchedRecipient, EmailTemplate, BatchSession, PdfFileInfo } from './types';
+import { SmtpConfig, MatchedRecipient, EmailTemplate, BatchSession, PdfFileInfo, SendStatus } from './types';
 import { interpolateTemplate } from './template';
 import { getUploadedPdfBuffer, saveBatch, getBatchById } from './storage';
 
@@ -218,7 +218,7 @@ export async function processNextBatchChunk(
 
   for (let i = 0; i < chunk.length; i++) {
     const item = chunk[i];
-    item.sendStatus = 'SENDING';
+    item.sendStatus = 'SENDING' as SendStatus;
     saveBatch(batch);
 
     const result = await sendEmailToRecipient(transporter, batchId, item, batch.template, batch.smtpConfig, batch.pdfs, baseUrl);
