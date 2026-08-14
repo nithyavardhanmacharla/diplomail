@@ -77,6 +77,22 @@ export function getUploadedPdfBuffer(filePath: string): Buffer | null {
   return null;
 }
 
+export function getPdfBufferById(id: string): Buffer | null {
+  ensureDirectories();
+  const uploadsDir = getUploadsDir();
+  try {
+    const files = fs.readdirSync(uploadsDir);
+    const matchedFile = files.find((f) => f.startsWith(`${id}_`) || f === id);
+    if (matchedFile) {
+      const fullPath = path.join(uploadsDir, matchedFile);
+      return fs.readFileSync(fullPath);
+    }
+  } catch (err) {
+    console.error('Failed to find PDF file by id:', id, err);
+  }
+  return null;
+}
+
 export function getAllBatches(): BatchSession[] {
   ensureDirectories();
   const file = getBatchesFile();

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, FileArchive, CheckCircle, AlertTriangle, ArrowRight, Download, Sparkles, X } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileArchive, CheckCircle, AlertTriangle, ArrowRight, Download, Sparkles, X, Scissors } from 'lucide-react';
 import { BatchSession } from '@/lib/types';
 
 interface UploadStepProps {
@@ -104,7 +104,7 @@ export const UploadStep: React.FC<UploadStepProps> = ({ onUploadSuccess }) => {
             Upload Recipient Spreadsheet & PDF Certificates
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Upload your CSV/Excel recipient list and corresponding PDF certificates (or a single .zip file).
+            Upload your CSV/Excel recipient list and corresponding PDF certificates, a .zip archive, or a single multi-page PDF to auto-split.
           </p>
         </div>
 
@@ -219,16 +219,24 @@ export const UploadStep: React.FC<UploadStepProps> = ({ onUploadSuccess }) => {
           <p className="text-xs text-slate-400 text-center mt-1">
             {pdfs.length > 0
               ? `Files: ${pdfs.map((f) => f.name).slice(0, 2).join(', ')}${pdfs.length > 2 ? '...' : ''}`
-              : 'Drag & drop multiple .pdf certificates or a .zip archive'}
+              : 'Drag & drop individual .pdf files, a .zip archive, or a single multi-page PDF'}
           </p>
 
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             <span className="text-[10px] font-medium px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">e.g. John_Doe.pdf</span>
             <span className="text-[10px] font-medium px-2 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">or certificates.zip</span>
+            <span className="text-[10px] font-medium px-2 py-1 rounded bg-purple-900/40 text-purple-300 border border-purple-500/20">or single multi-page PDF</span>
           </div>
 
+          {pdfs.length === 1 && pdfs[0].name.toLowerCase().endsWith('.pdf') && (
+            <div className="mt-3 flex items-center text-xs text-purple-300 gap-1.5 font-medium bg-purple-500/10 px-3 py-1.5 rounded-full border border-purple-500/20">
+              <Scissors className="w-3.5 h-3.5" />
+              <span>Single PDF detected — will auto-split by page if multi-page</span>
+            </div>
+          )}
+
           {pdfs.length > 0 && (
-            <div className="mt-4 flex items-center text-xs text-emerald-400 gap-1 font-medium bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+            <div className="mt-3 flex items-center text-xs text-emerald-400 gap-1 font-medium bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
               <CheckCircle className="w-3.5 h-3.5" />
               <span>{pdfs.length} File(s) Ready</span>
             </div>

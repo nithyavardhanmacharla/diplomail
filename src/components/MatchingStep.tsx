@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import JSZip from 'jszip';
 import {
   CheckCircle2,
   AlertCircle,
@@ -14,6 +15,8 @@ import {
   RefreshCw,
   SlidersHorizontal,
   ChevronDown,
+  Download,
+  FileArchive,
 } from 'lucide-react';
 import { BatchSession, MatchedRecipient, MatchStatus, PdfFileInfo } from '@/lib/types';
 
@@ -108,6 +111,59 @@ export const MatchingStep: React.FC<MatchingStepProps> = ({
       console.error('Failed to exclude unmatched:', err);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+
+  const handleDownloadAllZip = async () => {
+    setIsDownloadingZip(true);
+    try {
+      const zip = new JSZip();
+      let addedCount = 0;
+
+      for (const item of recipients) {
+        if (item.matchedPdfId && item.status !== 'EXCLUDED') {
+          const pdfObj = pdfs.find((p) => p.id === item.matchedPdfId);
+          if (pdfObj) {
+            let buffer: ArrayBuffer | null = null;
+            if (pdfObj.contentBase64) {
+              const bin = atob(pdfObj.contentBase64);
+              const bytes = new Uint8Array(bin.length);
+              for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+              buffer = bytes.buffer;
+            } else {
+              const res = await fetch(`/api/upload?pdfId=${encodeURIComponent(pdfObj.id)}`);
+              if (res.ok) buffer = await res.arrayBuffer();
+            }
+
+            if (buffer) {
+              const filename = pdfObj.originalName || `${item.recipient.name.replace(/\s+/g, '_')}_Certificate.pdf`;
+              zip.file(filename, buffer);
+              addedCount++;
+            }
+          }
+        }
+      }
+
+      if (addedCount === 0) {
+        alert('No matched PDF certificates to export.');
+        return;
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Matched_Certificates_${batch.name ? batch.name.replace(/[^a-zA-Z0-9_\-]/g, '_') : Date.now()}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('ZIP download error:', err);
+    } finally {
+      setIsDownloadingZip(false);
     }
   };
 
@@ -340,10 +396,31 @@ export const MatchingStep: React.FC<MatchingStepProps> = ({
       </div>
 
       {/* Proceed Navigation Bar */}
-      <div className="flex items-center justify-between pt-4">
-        <p className="text-xs text-slate-400">
-          Ready to dispatch? <strong className="text-slate-200">{matchedTotal}</strong> recipient(s) will receive their certificate.
-        </p>
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-800/60">
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={handleDownloadAllZip}
+            disabled={isDownloadingZip || matchedTotal === 0}
+            className="flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+            title="Download all individually split & named PDFs in a single ZIP file"
+          >
+            {isDownloadingZip ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                <span>Generating ZIP Archive...</span>
+              </>
+            ) : (
+              <>
+                <FileArchive className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Download All as .ZIP ({matchedTotal})</span>
+              </>
+            )}
+          </button>
+
+          <p className="text-xs text-slate-400 hidden md:block">
+            Ready to dispatch? <strong className="text-slate-200">{matchedTotal}</strong> recipient(s) matched.
+          </p>
+        </div>
 
         <button
           onClick={onProceedToCompose}

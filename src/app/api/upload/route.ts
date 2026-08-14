@@ -5,25 +5,38 @@ import JSZip from 'jszip';
 import path from 'path';
 import { RecipientRow, PdfFileInfo, BatchSession } from '@/lib/types';
 import { matchRecipientsToPdfs } from '@/lib/matching';
-import { saveUploadedPdfFile, saveBatch, getSavedSmtpConfig, getAllTemplates, getUploadedPdfBuffer, getUploadsDirectory } from '@/lib/storage';
+import { saveUploadedPdfFile, saveBatch, getSavedSmtpConfig, getAllTemplates, getUploadedPdfBuffer, getPdfBufferById, getUploadsDirectory } from '@/lib/storage';
+import { splitPdfIntoPages } from '@/lib/pdf-splitter';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
+    const pdfId = searchParams.get('pdfId');
     const pdfPath = searchParams.get('pdfPath');
 
-    if (!pdfPath) {
-      return NextResponse.json({ error: 'pdfPath is required' }, { status: 400 });
+    let buffer: Buffer | null = null;
+
+    if (pdfId) {
+      buffer = getPdfBufferById(pdfId);
     }
 
-    // Security: Resolve the path and validate it's within the allowed uploads directory
-    const resolvedPath = path.resolve(pdfPath);
-    const uploadsDir = path.resolve(getUploadsDirectory());
-    if (!resolvedPath.startsWith(uploadsDir)) {
-      return NextResponse.json({ error: 'Access denied: invalid file path.' }, { status: 403 });
+    if (!buffer && pdfPath) {
+      // Security: Case-insensitive check on Windows for drive letter compatibility
+      const resolvedPath = path.resolve(pdfPath);
+      const uploadsDir = path.resolve(getUploadsDirectory());
+      
+      const isAllowed =
+        process.platform === 'win32'
+          ? resolvedPath.toLowerCase().startsWith(uploadsDir.toLowerCase())
+          : resolvedPath.startsWith(uploadsDir);
+
+      if (!isAllowed) {
+        return NextResponse.json({ error: 'Access denied: invalid file path.' }, { status: 403 });
+      }
+
+      buffer = getUploadedPdfBuffer(resolvedPath);
     }
 
-    const buffer = getUploadedPdfBuffer(resolvedPath);
     if (!buffer) {
       return NextResponse.json({ error: 'PDF file not found' }, { status: 404 });
     }
@@ -33,6 +46,7 @@ export async function GET(req: NextRequest) {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'inline',
+        'Cache-Control': 'public, max-age=3600',
       },
     });
   } catch (err: any) {
@@ -113,47 +127,91 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No valid recipient rows found in spreadsheet.' }, { status: 400 });
     }
 
-    // 2. Extract PDFs (or unpack ZIP)
+    // 2. Extract PDFs (or unpack ZIP, or auto-split single multi-page PDF)
     const pdfList: PdfFileInfo[] = [];
 
-    for (const file of pdfFiles) {
-      const isZip = file.name.endsWith('.zip') || file.type === 'application/zip';
+    // Detect single multi-page PDF upload → auto-split into individual pages
+    const onlyPdfs = pdfFiles.filter((f) => f.name.toLowerCase().endsWith('.pdf'));
+    const hasZip = pdfFiles.some((f) => f.name.endsWith('.zip') || f.type === 'application/zip');
+    const isSinglePdfUpload = onlyPdfs.length === 1 && !hasZip;
 
-      if (isZip) {
-        const zipBuffer = Buffer.from(await file.arrayBuffer());
-        const zip = await JSZip.loadAsync(zipBuffer);
+    if (isSinglePdfUpload) {
+      const singleFile = onlyPdfs[0];
+      const pdfBuf = Buffer.from(await singleFile.arrayBuffer());
 
-        for (const relativePath of Object.keys(zip.files)) {
-          const zipEntry = zip.files[relativePath];
-          if (!zipEntry.dir && relativePath.toLowerCase().endsWith('.pdf')) {
-            const pdfBuf = await zipEntry.async('nodebuffer');
-            const pdfId = `pdf_${Math.random().toString(36).substring(2, 9)}`;
-            const basename = relativePath.split('/').pop() || relativePath;
-            const savedPath = saveUploadedPdfFile(pdfId, basename, pdfBuf);
+      // Attempt to split — returns [] if it's already a single page
+      const splitPages = await splitPdfIntoPages(pdfBuf, recipients);
 
-            pdfList.push({
-              id: pdfId,
-              filename: basename,
-              originalName: basename,
-              size: pdfBuf.length,
-              url: savedPath,
-              contentBase64: pdfBuf.toString('base64'),
-            });
-          }
+      if (splitPages.length > 0) {
+        // Multi-page detected — use the split pages
+        for (const page of splitPages) {
+          const pdfId = `pdf_${Math.random().toString(36).substring(2, 9)}`;
+          const savedPath = saveUploadedPdfFile(pdfId, page.filename, page.buffer);
+
+          pdfList.push({
+            id: pdfId,
+            filename: page.filename,
+            originalName: page.filename,
+            size: page.buffer.length,
+            url: savedPath,
+            contentBase64: page.buffer.toString('base64'),
+          });
         }
-      } else if (file.name.toLowerCase().endsWith('.pdf')) {
-        const pdfBuf = Buffer.from(await file.arrayBuffer());
+      } else {
+        // Single-page PDF — treat as a normal upload
         const pdfId = `pdf_${Math.random().toString(36).substring(2, 9)}`;
-        const savedPath = saveUploadedPdfFile(pdfId, file.name, pdfBuf);
+        const savedPath = saveUploadedPdfFile(pdfId, singleFile.name, pdfBuf);
 
         pdfList.push({
           id: pdfId,
-          filename: file.name,
-          originalName: file.name,
+          filename: singleFile.name,
+          originalName: singleFile.name,
           size: pdfBuf.length,
           url: savedPath,
           contentBase64: pdfBuf.toString('base64'),
         });
+      }
+    } else {
+      // Original flow: multiple PDFs or ZIP archives
+      for (const file of pdfFiles) {
+        const isZip = file.name.endsWith('.zip') || file.type === 'application/zip';
+
+        if (isZip) {
+          const zipBuffer = Buffer.from(await file.arrayBuffer());
+          const zip = await JSZip.loadAsync(zipBuffer);
+
+          for (const relativePath of Object.keys(zip.files)) {
+            const zipEntry = zip.files[relativePath];
+            if (!zipEntry.dir && relativePath.toLowerCase().endsWith('.pdf')) {
+              const pdfBuf = await zipEntry.async('nodebuffer');
+              const pdfId = `pdf_${Math.random().toString(36).substring(2, 9)}`;
+              const basename = relativePath.split('/').pop() || relativePath;
+              const savedPath = saveUploadedPdfFile(pdfId, basename, pdfBuf);
+
+              pdfList.push({
+                id: pdfId,
+                filename: basename,
+                originalName: basename,
+                size: pdfBuf.length,
+                url: savedPath,
+                contentBase64: pdfBuf.toString('base64'),
+              });
+            }
+          }
+        } else if (file.name.toLowerCase().endsWith('.pdf')) {
+          const pdfBuf = Buffer.from(await file.arrayBuffer());
+          const pdfId = `pdf_${Math.random().toString(36).substring(2, 9)}`;
+          const savedPath = saveUploadedPdfFile(pdfId, file.name, pdfBuf);
+
+          pdfList.push({
+            id: pdfId,
+            filename: file.name,
+            originalName: file.name,
+            size: pdfBuf.length,
+            url: savedPath,
+            contentBase64: pdfBuf.toString('base64'),
+          });
+        }
       }
     }
 

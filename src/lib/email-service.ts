@@ -3,6 +3,23 @@ import { SmtpConfig, MatchedRecipient, EmailTemplate, BatchSession, PdfFileInfo 
 import { interpolateTemplate } from './template';
 import { getUploadedPdfBuffer, saveBatch, getBatchById } from './storage';
 
+export function isHttpApiProvider(config: Partial<SmtpConfig> | undefined): boolean {
+  if (!config) return false;
+  const host = (config.host || '').toLowerCase();
+  const pass = config.pass || '';
+  const port = Number(config.port);
+
+  return (
+    host.includes('resend') ||
+    pass.startsWith('re_') ||
+    host.includes('brevo') ||
+    host.includes('sendinblue') ||
+    pass.startsWith('xkeysib-') ||
+    (host.includes('sendgrid') && port === 443) ||
+    pass.startsWith('SG.')
+  );
+}
+
 export function createTransporter(config: Partial<SmtpConfig>) {
   const host = config.host || process.env.SMTP_HOST || 'smtp.gmail.com';
   const port = Number(config.port || process.env.SMTP_PORT || 465);
@@ -27,22 +44,31 @@ export function createTransporter(config: Partial<SmtpConfig>) {
       // Enforce TLS cert validation in production; allow self-signed in dev
       rejectUnauthorized: process.env.NODE_ENV === 'production',
     },
-    connectionTimeout: 15000, // 15s connection timeout
-    greetingTimeout: 15000,   // 15s greeting timeout
-    socketTimeout: 20000,     // 20s socket timeout
-  });
+    family: 4, // Force IPv4 to prevent IPv6 DNS hang on Windows / residential networks
+    connectionTimeout: 10000, // 10s connection timeout
+    greetingTimeout: 10000,   // 10s greeting timeout
+    socketTimeout: 15000,     // 15s socket timeout
+  } as any);
 }
 
 function formatSmtpError(error: any, port: number): string {
   const msg = error?.message || String(error);
-  if (msg.includes('ETIMEDOUT') || msg.includes('ECONNREFUSED') || msg.includes('ESOCKET')) {
-    if (port === 587) {
-      return `Connection timed out on Port 587. Port 587 (TLS/STARTTLS) is blocked by many ISPs. Click 'Reconfigure SMTP' and select ⭐ Gmail (Port 465 SSL). (${msg})`;
-    }
-    return `Connection timed out on Port ${port}. Please verify your network/VPN allows outbound SMTP connections on port ${port}, or try switching to Port 465 SSL. (${msg})`;
+  const lower = msg.toLowerCase();
+
+  if (
+    lower.includes('timeout') ||
+    lower.includes('etimedout') ||
+    lower.includes('econnrefused') ||
+    lower.includes('esocket') ||
+    lower.includes('ehostunreach') ||
+    error?.code === 'ETIMEDOUT' ||
+    error?.code === 'ECONNREFUSED' ||
+    error?.command === 'CONN'
+  ) {
+    return `Connection timed out on Port ${port}. Your ISP / Wi-Fi network (or router firewall) is blocking raw SMTP ports (465/587). To fix this, click '🚀 Resend (HTTPS Port 443 — ISP Bypass)' above to use free HTTP API sending, or connect through a mobile hotspot/VPN.`;
   }
-  if (msg.includes('535') || msg.includes('Username and Password not accepted') || msg.includes('Invalid login')) {
-    return `Authentication failed (535). For Gmail, generate a 16-character "App Password" at myaccount.google.com/apppasswords instead of your main account password. (${msg})`;
+  if (lower.includes('535') || lower.includes('username and password not accepted') || lower.includes('invalid login')) {
+    return `Authentication failed (535). For Gmail, you must generate a 16-character "App Password" at myaccount.google.com/apppasswords (with 2FA enabled) instead of your regular password.`;
   }
   return msg;
 }
@@ -52,7 +78,7 @@ export async function verifySmtpConnection(config: Partial<SmtpConfig>): Promise
     const host = config.host || '';
     const pass = config.pass || '';
 
-    // Support Resend HTTP API (HTTPS Port 443 - Bypasses raw TCP SMTP port blocks)
+    // 1. Support Resend HTTP API (HTTPS Port 443)
     if (host.includes('resend') || pass.startsWith('re_')) {
       if (!pass) {
         return { success: false, message: 'Resend API Key (re_...) is required.' };
@@ -77,6 +103,53 @@ export async function verifySmtpConnection(config: Partial<SmtpConfig>): Promise
       if (data.message) {
         return { success: false, message: `Resend API Error: ${data.message}` };
       }
+    }
+
+    // 2. Support Brevo (Sendinblue) HTTP API (HTTPS Port 443 - 300 free emails/day)
+    if (host.includes('brevo') || host.includes('sendinblue') || pass.startsWith('xkeysib-')) {
+      if (!pass) {
+        return { success: false, message: 'Brevo API Key (xkeysib-...) is required.' };
+      }
+      const res = await fetch('https://api.brevo.com/v3/senders', {
+        method: 'GET',
+        headers: {
+          'api-key': pass.trim(),
+          'accept': 'application/json',
+        },
+      });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.senders)) {
+        const verifiedEmails = data.senders.filter((s: any) => s.active).map((s: any) => s.email.toLowerCase());
+        const senderToCheck = (config.fromEmail || config.user || '').trim().toLowerCase();
+
+        if (senderToCheck && !verifiedEmails.includes(senderToCheck)) {
+          return {
+            success: false,
+            message: `⚠️ Brevo API Key is valid, but "${config.fromEmail}" is NOT verified in Brevo! Your verified sender is: "${verifiedEmails[0]}". Please change "Sender Email ID" to "${verifiedEmails[0]}" or add "${config.fromEmail}" at https://app.brevo.com/senders.`,
+          };
+        }
+        return {
+          success: true,
+          message: `Brevo HTTP API verified! Sender "${senderToCheck || verifiedEmails[0]}" is authorized (300 free emails/day).`,
+        };
+      }
+      return { success: false, message: data.message || 'Invalid Brevo API Key.' };
+    }
+
+    // 3. Support SendGrid HTTP API (HTTPS Port 443)
+    if ((host.includes('sendgrid') || pass.startsWith('SG.')) && Number(config.port) === 443) {
+      if (!pass) {
+        return { success: false, message: 'SendGrid API Key (SG....) is required.' };
+      }
+      const res = await fetch('https://api.sendgrid.com/v3/scopes', {
+        headers: {
+          'Authorization': `Bearer ${pass.trim()}`,
+        },
+      });
+      if (res.ok) {
+        return { success: true, message: 'SendGrid HTTP API verified successfully! (Port 443 HTTPS - ISP Bypass)' };
+      }
+      return { success: false, message: 'Invalid SendGrid API Key.' };
     }
 
     const transporter = createTransporter(config);
@@ -151,10 +224,17 @@ export async function sendEmailToRecipient(
   const fromName = smtpConfig.fromName || 'Certificate Mailer';
   const fromEmail = smtpConfig.fromEmail || smtpConfig.user || process.env.SMTP_USER || 'onboarding@resend.dev';
 
-  // Support Resend HTTP API (HTTPS Port 443) to bypass raw TCP SMTP port blocks
+  // Support Resend HTTP API (HTTPS Port 443)
   if (smtpConfig.host?.includes('resend') || smtpConfig.pass?.startsWith('re_')) {
     try {
       const resendApiKey = smtpConfig.pass?.trim();
+      
+      // Resend does not allow public domains like @gmail.com unless verified
+      let resendFrom = fromEmail;
+      if (resendFrom.endsWith('@gmail.com') || resendFrom.endsWith('@yahoo.com') || resendFrom.endsWith('@outlook.com') || resendFrom.endsWith('@hotmail.com')) {
+        resendFrom = 'onboarding@resend.dev';
+      }
+
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -162,7 +242,8 @@ export async function sendEmailToRecipient(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: `${fromName} <${fromEmail}>`,
+          from: `${fromName} <${resendFrom}>`,
+          reply_to: fromEmail,
           to: recipient.email,
           subject,
           html: bodyHtml,
@@ -181,10 +262,98 @@ export async function sendEmailToRecipient(
         return { success: true, messageId: data.id };
       } else {
         const errStr = data.message || data.error?.message || JSON.stringify(data);
+        if (errStr.includes('domain is not verified') || errStr.includes('validation_error')) {
+          return {
+            success: false,
+            error: `Resend Error: ${errStr}. (Tip: Switch to ⚡ Brevo in SMTP settings to send directly from your personal Gmail address with 300 free emails/day).`,
+          };
+        }
         return { success: false, error: `Resend HTTP API Error: ${errStr}` };
       }
     } catch (err: any) {
       return { success: false, error: `Resend HTTP Error: ${err?.message || String(err)}` };
+    }
+  }
+
+  // Support Brevo (Sendinblue) HTTP API (HTTPS Port 443)
+  if (smtpConfig.host?.includes('brevo') || smtpConfig.host?.includes('sendinblue') || smtpConfig.pass?.startsWith('xkeysib-')) {
+    try {
+      const brevoApiKey = smtpConfig.pass?.trim();
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey || '',
+          'Content-Type': 'application/json',
+          'accept': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: fromName, email: fromEmail },
+          to: [{ email: recipient.email, name: recipient.name }],
+          subject,
+          htmlContent: bodyHtml,
+          textContent: bodyText,
+          attachment: [
+            {
+              name: matchedPdfName || `${recipient.name.replace(/\s+/g, '_')}_Certificate.pdf`,
+              content: pdfBuffer.toString('base64'),
+            },
+          ],
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && (data.messageId || data.id)) {
+        return { success: true, messageId: data.messageId || data.id };
+      } else {
+        return { success: false, error: `Brevo HTTP API Error: ${data.message || JSON.stringify(data)}` };
+      }
+    } catch (err: any) {
+      return { success: false, error: `Brevo HTTP Error: ${err?.message || String(err)}` };
+    }
+  }
+
+  // Support SendGrid HTTP API (HTTPS Port 443)
+  if ((smtpConfig.host?.includes('sendgrid') || smtpConfig.pass?.startsWith('SG.')) && Number(smtpConfig.port) === 443) {
+    try {
+      const sendgridApiKey = smtpConfig.pass?.trim();
+      const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sendgridApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personalizations: [
+            {
+              to: [{ email: recipient.email, name: recipient.name }],
+            },
+          ],
+          from: { email: fromEmail, name: fromName },
+          subject,
+          content: [
+            { type: 'text/plain', value: bodyText },
+            { type: 'text/html', value: bodyHtml },
+          ],
+          attachments: [
+            {
+              content: pdfBuffer.toString('base64'),
+              filename: matchedPdfName || `${recipient.name.replace(/\s+/g, '_')}_Certificate.pdf`,
+              type: 'application/pdf',
+              disposition: 'attachment',
+            },
+          ],
+        }),
+      });
+
+      if (res.status === 202 || res.ok) {
+        const msgId = res.headers.get('x-message-id') || `sg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        return { success: true, messageId: msgId };
+      } else {
+        const data = await res.json().catch(() => ({}));
+        const errStr = data.errors ? data.errors.map((e: any) => e.message).join(', ') : res.statusText;
+        return { success: false, error: `SendGrid API Error (${res.status}): ${errStr}` };
+      }
+    } catch (err: any) {
+      return { success: false, error: `SendGrid HTTP Error: ${err?.message || String(err)}` };
     }
   }
 
@@ -297,10 +466,10 @@ export async function processNextBatchChunk(
 
   const chunk = candidates.slice(0, chunkSize);
 
-  const isResend = batch.smtpConfig?.host?.includes('resend') || batch.smtpConfig?.pass?.startsWith('re_');
+  const isHttpApi = isHttpApiProvider(batch.smtpConfig);
   let transporter: nodemailer.Transporter | null = null;
 
-  if (!isResend) {
+  if (!isHttpApi) {
     try {
       transporter = createTransporter(batch.smtpConfig);
     } catch (err: any) {
