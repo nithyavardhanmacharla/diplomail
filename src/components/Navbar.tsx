@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import { History, Server } from 'lucide-react';
 
 interface NavbarProps {
@@ -23,9 +24,16 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center space-x-3">
           <div 
             onClick={onResetWizard}
-            className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-700/80 p-1 shadow-lg shadow-indigo-500/10 hover:scale-105 transition-transform duration-200 flex items-center justify-center overflow-hidden cursor-pointer"
+            className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-700/80 p-1 shadow-lg shadow-indigo-500/10 hover:scale-105 transition-transform duration-200 flex items-center justify-center overflow-hidden cursor-pointer relative"
           >
-            <img src="/logo.png" alt="DiploMail Logo" className="w-full h-full object-contain rounded-lg" />
+            <Image
+              src="/logo.png"
+              alt="DiploMail Logo"
+              width={36}
+              height={36}
+              className="w-full h-full object-contain rounded-lg"
+              priority
+            />
           </div>
           <div>
             <div className="flex items-center space-x-2">

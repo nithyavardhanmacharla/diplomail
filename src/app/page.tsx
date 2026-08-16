@@ -289,14 +289,14 @@ export default function Home() {
       <footer className="border-t border-slate-800/60 py-6 text-center text-xs text-slate-400 space-y-1">
         <p>DiploMail — Automated Certificate &amp; PDF Batch Delivery System</p>
         <p className="font-medium text-slate-300">
-          © 2026 M. Nithya Vardhan · Designed &amp; Developed by{' '}
+          © 2026 Nithyavardhan Macharla · Designed &amp; Developed by{' '}
           <a
             href="https://linkedin.com/in/nithyavardhanmacharla"
             target="_blank"
             rel="noopener noreferrer"
             className="text-indigo-400 font-semibold hover:text-indigo-300 hover:underline transition-colors"
           >
-            M. Nithya Vardhan
+            MNV
           </a>
         </p>
       </footer>

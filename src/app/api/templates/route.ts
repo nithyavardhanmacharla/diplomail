@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
 
     saveTemplates(templates);
     return NextResponse.json({ success: true, templates, template });
-  } catch (error: any) {
-    return NextResponse.json({ error: error?.message || 'Failed to save template.' }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to save template.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

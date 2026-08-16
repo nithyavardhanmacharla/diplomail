@@ -6,7 +6,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const result = await verifySmtpConnection(body);
     return NextResponse.json(result);
-  } catch (error: any) {
-    return NextResponse.json({ success: false, message: error?.message || 'SMTP Test failed.' }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'SMTP Test failed.';
+    return NextResponse.json({ success: false, message }, { status: 500 });
   }
 }

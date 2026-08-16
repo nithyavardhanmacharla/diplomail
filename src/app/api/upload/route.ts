@@ -49,8 +49,9 @@ export async function GET(req: NextRequest) {
         'Cache-Control': 'public, max-age=3600',
       },
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Failed to fetch PDF.' }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Failed to fetch PDF.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
       const workbook = XLSX.read(spreadsheetBuffer, { type: 'buffer' });
       const firstSheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[firstSheetName];
-      const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
 
       rows.forEach((row, index) => {
         const keys = Object.keys(row);
@@ -109,13 +110,18 @@ export async function POST(req: NextRequest) {
         const messageKey = keys.find((k) => /message|custom/i.test(k));
 
         if (row[nameKey] || row[emailKey]) {
+          const stringRow: Record<string, string> = {};
+          Object.entries(row).forEach(([k, v]) => {
+            stringRow[k] = String(v ?? '');
+          });
+
           recipients.push({
             id: `rec_${index + 1}_${Math.random().toString(36).substring(2, 7)}`,
             name: String(row[nameKey] || '').trim(),
             email: String(row[emailKey] || '').trim(),
             subject: subjectKey ? String(row[subjectKey] || '').trim() : undefined,
             customMessage: messageKey ? String(row[messageKey] || '').trim() : undefined,
-            extraData: row,
+            extraData: stringRow,
           });
         }
       });
@@ -250,8 +256,9 @@ export async function POST(req: NextRequest) {
     saveBatch(batchSession);
 
     return NextResponse.json({ success: true, batch: batchSession });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Upload handler error:', error);
-    return NextResponse.json({ error: error?.message || 'Failed to process files.' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to process files.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

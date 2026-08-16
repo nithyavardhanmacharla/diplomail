@@ -16,7 +16,13 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "M. Nithya Vardhan" }],
   icons: {
-    icon: "/logo.png",
+    icon: [
+      { url: "/logo.png", type: "image/png" },
+      { url: "/icon.png", type: "image/png" },
+      { url: "/favicon.ico", sizes: "any" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-icon.png",
   },
   openGraph: {
     title: "DiploMail — Automated Certificate & PDF Batch Mailer",

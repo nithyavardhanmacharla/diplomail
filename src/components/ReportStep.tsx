@@ -8,20 +8,13 @@ import {
   Check,
   CheckCheck,
   AlertCircle,
-  XCircle,
   ArrowLeft,
   Search,
-  Filter,
   Eye,
   Info,
-  Clock,
-  Send,
-  ExternalLink,
-  Globe,
-  Wifi,
   WifiOff,
 } from 'lucide-react';
-import { BatchSession, SendStatus } from '@/lib/types';
+import { BatchSession } from '@/lib/types';
 
 interface ReportStepProps {
   batch: BatchSession;
@@ -39,7 +32,13 @@ export const ReportStep: React.FC<ReportStepProps> = ({
   const [simulatingId, setSimulatingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'SENT' | 'DELIVERED' | 'SEEN' | 'FAILED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isLocalhost, setIsLocalhost] = useState(false);
+  const [isLocalhost] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const host = window.location.hostname;
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    }
+    return false;
+  });
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
 
   // Stabilize callback ref to prevent useEffect re-render loops
@@ -52,14 +51,6 @@ export const ReportStep: React.FC<ReportStepProps> = ({
   useEffect(() => {
     batchIdRef.current = batch.id;
   }, [batch.id]);
-
-  // Detect localhost
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const host = window.location.hostname;
-      setIsLocalhost(host === 'localhost' || host === '127.0.0.1' || host === '::1');
-    }
-  }, []);
 
   // Stable fetch function
   const fetchBatchStatus = useCallback(async () => {

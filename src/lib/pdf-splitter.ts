@@ -216,7 +216,7 @@ async function extractAllPageTexts(pdfBuffer: Buffer): Promise<string[]> {
       return [result.text];
     }
     return [];
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[pdf-splitter] extractAllPageTexts error:', err);
     return [];
   }

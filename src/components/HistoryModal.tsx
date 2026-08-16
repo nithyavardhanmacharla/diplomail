@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, History, FileSpreadsheet, Trash2, ArrowRight, Clock } from 'lucide-react';
+import { X, History, Trash2, ArrowRight, Clock } from 'lucide-react';
 import { BatchSession } from '@/lib/types';
 
 interface HistoryModalProps {
@@ -16,19 +16,27 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   onSelectBatch,
 }) => {
   const [batches, setBatches] = useState<BatchSession[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let isMounted = true;
     if (isOpen) {
-      setIsLoading(true);
       fetch('/api/batches')
         .then((res) => res.json())
         .then((data) => {
-          if (data.batches) setBatches(data.batches);
+          if (isMounted) {
+            if (data.batches) setBatches(data.batches);
+            setIsLoading(false);
+          }
         })
-        .catch((err) => console.error('Failed to load batch history:', err))
-        .finally(() => setIsLoading(false));
+        .catch((err) => {
+          console.error('Failed to load batch history:', err);
+          if (isMounted) setIsLoading(false);
+        });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;

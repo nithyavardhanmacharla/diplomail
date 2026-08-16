@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBatchById, saveBatch, deleteBatch } from '@/lib/storage';
+import { MatchStatus } from '@/lib/types';
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,7 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
   if (body.recipientUpdates) {
     // Array of { recipientId: string, matchedPdfId: string | null, status: MatchStatus }
-    body.recipientUpdates.forEach((upd: any) => {
+    body.recipientUpdates.forEach((upd: { recipientId: string; matchedPdfId?: string | null; status?: MatchStatus }) => {
       const item = batch.recipients.find((r) => r.id === upd.recipientId);
       if (item) {
         if (upd.matchedPdfId !== undefined) {

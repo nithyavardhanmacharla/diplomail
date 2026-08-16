@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Send, Pause, Play, CheckCircle2, AlertCircle, RefreshCw, ArrowRight, Clock, Server, AlertTriangle, Check, CheckCheck } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Send, Pause, Play, AlertCircle, RefreshCw, ArrowRight, Clock, Server, AlertTriangle, Check, CheckCheck } from 'lucide-react';
 import { BatchSession, SmtpConfig } from '@/lib/types';
 
 interface SendingStepProps {
@@ -83,9 +83,10 @@ export const SendingStep: React.FC<SendingStepProps> = ({
           break;
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed dispatch chunk:', err);
-      setErrorMessage(err?.message || 'Error dispatching emails.');
+      const message = err instanceof Error ? err.message : 'Error dispatching emails.';
+      setErrorMessage(message);
     } finally {
       setIsSending(false);
       isLoopingRef.current = false;

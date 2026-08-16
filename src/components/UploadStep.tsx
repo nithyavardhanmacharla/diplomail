@@ -75,9 +75,10 @@ export const UploadStep: React.FC<UploadStepProps> = ({ onUploadSuccess }) => {
       }
 
       onUploadSuccess(data.batch);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Upload Error:', err);
-      setErrorMessage(err?.message || 'Error processing files.');
+      const message = err instanceof Error ? err.message : 'Error processing files.';
+      setErrorMessage(message);
     } finally {
       setIsUploading(false);
     }

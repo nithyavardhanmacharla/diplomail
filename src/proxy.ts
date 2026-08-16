@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 /**
  * Security headers proxy.
@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
  *
  * In Next.js 16+, the "middleware" convention is renamed to "proxy".
  */
-export function proxy(request: NextRequest) {
+export function proxy() {
   const response = NextResponse.next();
 
   // Prevent MIME type sniffing
@@ -33,6 +33,6 @@ export function proxy(request: NextRequest) {
 export const config = {
   // Apply security headers to all routes except static files
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|logo.png).*)',
+    '/((?!_next/static|_next/image|favicon.ico|logo.png|icon.png|apple-icon.png).*)',
   ],
 };

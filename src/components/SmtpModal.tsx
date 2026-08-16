@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { X, Server, CheckCircle2, AlertTriangle, RefreshCw, ExternalLink, ShieldCheck, Zap } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Server, CheckCircle2, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react';
 import { SmtpConfig } from '@/lib/types';
 
 interface SmtpModalProps {
@@ -17,26 +17,28 @@ export const SmtpModal: React.FC<SmtpModalProps> = ({
   smtpConfig,
   onSaveConfig,
 }) => {
-  const [host, setHost] = useState(smtpConfig.host || 'smtp.gmail.com');
-  const [port, setPort] = useState(String(smtpConfig.port || 465));
-  const [user, setUser] = useState(smtpConfig.user || '');
-  const [pass, setPass] = useState(smtpConfig.pass || '');
-  const [fromName, setFromName] = useState(smtpConfig.fromName || 'Certificate Mailer');
-  const [fromEmail, setFromEmail] = useState(smtpConfig.fromEmail || '');
-  const [throttleDelayMs, setThrottleDelayMs] = useState(String(smtpConfig.throttleDelayMs || 1000));
+  const [host, setHost] = useState(smtpConfig?.host || 'smtp.gmail.com');
+  const [port, setPort] = useState(String(smtpConfig?.port || 465));
+  const [user, setUser] = useState(smtpConfig?.user || '');
+  const [pass, setPass] = useState(smtpConfig?.pass || '');
+  const [fromName, setFromName] = useState(smtpConfig?.fromName || 'Certificate Mailer');
+  const [fromEmail, setFromEmail] = useState(smtpConfig?.fromEmail || '');
+  const [throttleDelayMs, setThrottleDelayMs] = useState(String(smtpConfig?.throttleDelayMs || 1000));
 
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  const prevConfigRef = useRef(smtpConfig);
   useEffect(() => {
-    if (smtpConfig) {
-      if (smtpConfig.host) setHost(smtpConfig.host);
-      if (smtpConfig.port) setPort(String(smtpConfig.port));
-      if (smtpConfig.user) setUser(smtpConfig.user);
-      if (smtpConfig.pass) setPass(smtpConfig.pass);
-      if (smtpConfig.fromName) setFromName(smtpConfig.fromName);
-      if (smtpConfig.fromEmail) setFromEmail(smtpConfig.fromEmail);
-      if (smtpConfig.throttleDelayMs) setThrottleDelayMs(String(smtpConfig.throttleDelayMs));
+    if (prevConfigRef.current !== smtpConfig && smtpConfig) {
+      prevConfigRef.current = smtpConfig;
+      setHost(smtpConfig.host || 'smtp.gmail.com');
+      setPort(String(smtpConfig.port || 465));
+      setUser(smtpConfig.user || '');
+      setPass(smtpConfig.pass || '');
+      setFromName(smtpConfig.fromName || 'Certificate Mailer');
+      setFromEmail(smtpConfig.fromEmail || '');
+      setThrottleDelayMs(String(smtpConfig.throttleDelayMs || 1000));
     }
   }, [smtpConfig]);
 
@@ -84,8 +86,9 @@ export const SmtpModal: React.FC<SmtpModalProps> = ({
 
       const data = await res.json();
       setTestResult(data);
-    } catch (err: any) {
-      setTestResult({ success: false, message: err?.message || 'Connection test failed.' });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Connection test failed.';
+      setTestResult({ success: false, message });
     } finally {
       setIsTesting(false);
     }
@@ -215,7 +218,7 @@ export const SmtpModal: React.FC<SmtpModalProps> = ({
               </a>
             </div>
             <p className="text-[11px] text-emerald-300/80 leading-relaxed">
-              * <strong>Sender Email rule:</strong> On Resend free tier, set "From Email" to <code className="bg-emerald-950/80 px-1 py-0.5 rounded text-emerald-200 font-bold">onboarding@resend.dev</code> (Resend blocks unverified @gmail.com domains).<br />
+              * <strong>Sender Email rule:</strong> On Resend free tier, set &quot;From Email&quot; to <code className="bg-emerald-950/80 px-1 py-0.5 rounded text-emerald-200 font-bold">onboarding@resend.dev</code> (Resend blocks unverified @gmail.com domains).<br />
               * <strong>Want to send from your personal @gmail.com?</strong> Switch to <strong className="text-blue-300">⚡ Brevo</strong> above!
             </p>
           </div>
@@ -379,7 +382,7 @@ export const SmtpModal: React.FC<SmtpModalProps> = ({
         {/* Sender Name and Sender Email ID */}
         <div className="grid grid-cols-2 gap-3 bg-indigo-950/20 p-3.5 rounded-xl border border-indigo-500/20">
           <div>
-            <label className="text-xs font-semibold text-indigo-300 block mb-1">Sender Name ("From" Name)</label>
+            <label className="text-xs font-semibold text-indigo-300 block mb-1">Sender Name (&quot;From&quot; Name)</label>
             <input
               type="text"
               value={fromName}
@@ -389,7 +392,7 @@ export const SmtpModal: React.FC<SmtpModalProps> = ({
             />
           </div>
           <div>
-            <label className="text-xs font-semibold text-indigo-300 block mb-1">Sender Email ID ("From" Email)</label>
+            <label className="text-xs font-semibold text-indigo-300 block mb-1">Sender Email ID (&quot;From&quot; Email)</label>
             <input
               type="email"
               value={fromEmail}
@@ -399,7 +402,7 @@ export const SmtpModal: React.FC<SmtpModalProps> = ({
             />
           </div>
           <div className="col-span-2 text-[11px] text-slate-400">
-            * Emails will be sent as: <strong className="text-indigo-300">"{fromName || 'Certificate Mailer'}" &lt;{fromEmail || user || 'sender@example.com'}&gt;</strong>
+            * Emails will be sent as: <strong className="text-indigo-300">&quot;{fromName || 'Certificate Mailer'}&quot; &lt;{fromEmail || user || 'sender@example.com'}&gt;</strong>
           </div>
         </div>
 

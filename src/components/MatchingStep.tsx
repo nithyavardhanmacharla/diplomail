@@ -6,19 +6,14 @@ import {
   CheckCircle2,
   AlertCircle,
   XCircle,
-  HelpCircle,
   Search,
-  Filter,
   ArrowRight,
   Eye,
-  FileText,
   RefreshCw,
   SlidersHorizontal,
-  ChevronDown,
-  Download,
   FileArchive,
 } from 'lucide-react';
-import { BatchSession, MatchedRecipient, MatchStatus, PdfFileInfo } from '@/lib/types';
+import { BatchSession, MatchStatus, PdfFileInfo } from '@/lib/types';
 
 interface MatchingStepProps {
   batch: BatchSession;

@@ -38,9 +38,10 @@ export async function POST(req: NextRequest) {
     if (!isResend) {
       try {
         createTransporter(batch.smtpConfig);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'SMTP Credentials missing. Please configure your sender email login in SMTP settings.';
         return NextResponse.json(
-          { error: err?.message || 'SMTP Credentials missing. Please configure your sender email login in SMTP settings.' },
+          { error: message },
           { status: 400 }
         );
       }
@@ -54,11 +55,12 @@ export async function POST(req: NextRequest) {
     const baseUrl = `${protocol}://${host}`;
 
     // Synchronously process the next chunk of recipients
-    const result = await processNextBatchChunk(batchId, !!onlyFailed, 2, baseUrl);
+    const result = await processNextBatchChunk(batchId, Boolean(onlyFailed), 2, baseUrl);
 
     return NextResponse.json(result);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Batch send API error:', error);
-    return NextResponse.json({ error: error?.message || 'Failed to process batch sending.' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to process batch sending.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

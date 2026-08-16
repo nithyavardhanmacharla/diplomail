@@ -22,11 +22,9 @@ import {
   HelpCircle,
   ChevronDown,
   Palette,
-  Layout,
   Info,
   Maximize2,
   Minimize2,
-  FileCode,
   Wand2,
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
@@ -61,7 +59,6 @@ export const ComposeStep: React.FC<ComposeStepProps> = ({
   const [templateName, setTemplateName] = useState(batch.template?.name || 'Custom Certificate Email');
   const [subject, setSubject] = useState(batch.template?.subject || 'Your Certificate of Completion: {{name}}');
   const [bodyHtml, setBodyHtml] = useState(batch.template?.bodyHtml || DEFAULT_EMAIL_TEMPLATES[0].bodyHtml);
-  const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
   const [selectedRecipientIndex, setSelectedRecipientIndex] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);

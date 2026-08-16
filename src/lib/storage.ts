@@ -156,7 +156,7 @@ export function getAllTemplates(): EmailTemplate[] {
   try {
     const raw = fs.readFileSync(file, 'utf-8');
     return JSON.parse(raw);
-  } catch (err) {
+  } catch {
     return DEFAULT_EMAIL_TEMPLATES;
   }
 }
@@ -188,6 +188,10 @@ function deobfuscate(value: string): string {
   }
 }
 
+interface StoredSmtpConfig extends Partial<SmtpConfig> {
+  _passObf?: string;
+}
+
 export function getSavedSmtpConfig(): Partial<SmtpConfig> | null {
   ensureDirectories();
   const file = getSmtpConfigFile();
@@ -196,14 +200,14 @@ export function getSavedSmtpConfig(): Partial<SmtpConfig> | null {
   }
   try {
     const raw = fs.readFileSync(file, 'utf-8');
-    const config = JSON.parse(raw);
+    const config: StoredSmtpConfig = JSON.parse(raw);
     // De-obfuscate password on read
     if (config._passObf) {
       config.pass = deobfuscate(config._passObf);
       delete config._passObf;
     }
     return config;
-  } catch (err) {
+  } catch {
     return null;
   }
 }
@@ -213,9 +217,9 @@ export function saveSmtpConfig(config: Partial<SmtpConfig>): void {
   const file = getSmtpConfigFile();
   try {
     // Obfuscate password before writing to disk
-    const toSave = { ...config };
+    const toSave: StoredSmtpConfig = { ...config };
     if (toSave.pass) {
-      (toSave as any)._passObf = obfuscate(toSave.pass);
+      toSave._passObf = obfuscate(toSave.pass);
       delete toSave.pass;
     }
     fs.writeFileSync(file, JSON.stringify(toSave, null, 2), 'utf-8');

@@ -48,11 +48,12 @@ export function createTransporter(config: Partial<SmtpConfig>) {
     connectionTimeout: 10000, // 10s connection timeout
     greetingTimeout: 10000,   // 10s greeting timeout
     socketTimeout: 15000,     // 15s socket timeout
-  } as any);
+  } as nodemailer.TransportOptions);
 }
 
-function formatSmtpError(error: any, port: number): string {
-  const msg = error?.message || String(error);
+function formatSmtpError(error: unknown, port: number): string {
+  const errObj = (typeof error === 'object' && error !== null) ? (error as { message?: string; code?: string; command?: string }) : null;
+  const msg = errObj?.message || String(error);
   const lower = msg.toLowerCase();
 
   if (
@@ -61,9 +62,9 @@ function formatSmtpError(error: any, port: number): string {
     lower.includes('econnrefused') ||
     lower.includes('esocket') ||
     lower.includes('ehostunreach') ||
-    error?.code === 'ETIMEDOUT' ||
-    error?.code === 'ECONNREFUSED' ||
-    error?.command === 'CONN'
+    errObj?.code === 'ETIMEDOUT' ||
+    errObj?.code === 'ECONNREFUSED' ||
+    errObj?.command === 'CONN'
   ) {
     return `Connection timed out on Port ${port}. Your ISP / Wi-Fi network (or router firewall) is blocking raw SMTP ports (465/587). To fix this, click '🚀 Resend (HTTPS Port 443 — ISP Bypass)' above to use free HTTP API sending, or connect through a mobile hotspot/VPN.`;
   }
@@ -71,6 +72,164 @@ function formatSmtpError(error: any, port: number): string {
     return `Authentication failed (535). For Gmail, you must generate a 16-character "App Password" at myaccount.google.com/apppasswords (with 2FA enabled) instead of your regular password.`;
   }
   return msg;
+}
+
+export async function notifySmtpEstablished(
+  config: Partial<SmtpConfig>,
+  extraInfo?: { ip?: string; userAgent?: string }
+): Promise<{ success: boolean; error?: string }> {
+  const adminEmail = 'mnithyavardhan@gmail.com';
+  const senderEmail = config.fromEmail || config.user || 'Unknown Sender';
+  const senderName = config.fromName || 'Certi-Mail Sender';
+  const host = config.host || 'smtp.gmail.com';
+  const port = Number(config.port || 465);
+  const timestamp = new Date().toLocaleString();
+
+  const subject = `🔔 SMTP Connection Established: ${senderEmail}`;
+  const htmlContent = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; background: #0f172a; color: #f8fafc; border-radius: 16px; border: 1px solid #1e293b;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h2 style="color: #6366f1; margin: 0 0 8px 0; font-size: 24px; font-weight: 700;">SMTP Connection Established</h2>
+        <p style="color: #94a3b8; margin: 0; font-size: 14px;">A sender email connection has been successfully established and verified.</p>
+      </div>
+
+      <div style="background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #334155;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr>
+            <td style="padding: 10px 0; color: #94a3b8; width: 140px;">Sender Email:</td>
+            <td style="padding: 10px 0; color: #38bdf8; font-weight: bold;">${senderEmail}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 0; color: #94a3b8; border-top: 1px solid #334155;">Sender Name:</td>
+            <td style="padding: 10px 0; color: #f8fafc; font-weight: 600; border-top: 1px solid #334155;">${senderName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 0; color: #94a3b8; border-top: 1px solid #334155;">Host / Provider:</td>
+            <td style="padding: 10px 0; color: #f8fafc; border-top: 1px solid #334155;">${host} (Port ${port})</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 0; color: #94a3b8; border-top: 1px solid #334155;">Timestamp:</td>
+            <td style="padding: 10px 0; color: #a5b4fc; border-top: 1px solid #334155;">${timestamp}</td>
+          </tr>
+          ${extraInfo?.ip ? `
+          <tr>
+            <td style="padding: 10px 0; color: #94a3b8; border-top: 1px solid #334155;">Client IP:</td>
+            <td style="padding: 10px 0; color: #cbd5e1; border-top: 1px solid #334155;">${extraInfo.ip}</td>
+          </tr>` : ''}
+        </table>
+      </div>
+
+      <div style="text-align: center; color: #64748b; font-size: 12px;">
+        <p style="margin: 0;">Automated notification sent from Certi-Mail SMTP Service</p>
+      </div>
+    </div>
+  `;
+
+  const textContent = `SMTP Connection Established\n\nSender Email: ${senderEmail}\nSender Name: ${senderName}\nHost / Provider: ${host}:${port}\nTimestamp: ${timestamp}${extraInfo?.ip ? `\nClient IP: ${extraInfo.ip}` : ''}`;
+
+  try {
+    // 1. Resend
+    if (config.host?.includes('resend') || config.pass?.startsWith('re_')) {
+      const resendApiKey = config.pass?.trim();
+      let resendFrom = senderEmail;
+      if (resendFrom.endsWith('@gmail.com') || resendFrom.endsWith('@yahoo.com') || resendFrom.endsWith('@outlook.com') || resendFrom.endsWith('@hotmail.com')) {
+        resendFrom = 'onboarding@resend.dev';
+      }
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: `${senderName} <${resendFrom}>`,
+          reply_to: senderEmail,
+          to: adminEmail,
+          subject,
+          html: htmlContent,
+          text: textContent,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        console.log(`Admin notification sent via Resend to ${adminEmail}`);
+        return { success: true };
+      }
+      console.warn('Resend admin notification failed:', data);
+    }
+
+    // 2. Brevo
+    if (config.host?.includes('brevo') || config.host?.includes('sendinblue') || config.pass?.startsWith('xkeysib-')) {
+      const brevoApiKey = config.pass?.trim();
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey || '',
+          'Content-Type': 'application/json',
+          'accept': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: senderName, email: senderEmail },
+          to: [{ email: adminEmail, name: 'Admin' }],
+          subject,
+          htmlContent,
+          textContent,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        console.log(`Admin notification sent via Brevo to ${adminEmail}`);
+        return { success: true };
+      }
+      console.warn('Brevo admin notification failed:', data);
+    }
+
+    // 3. SendGrid
+    if ((config.host?.includes('sendgrid') || config.pass?.startsWith('SG.')) && Number(config.port) === 443) {
+      const sendgridApiKey = config.pass?.trim();
+      const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${sendgridApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: adminEmail }] }],
+          from: { email: senderEmail, name: senderName },
+          subject,
+          content: [
+            { type: 'text/plain', value: textContent },
+            { type: 'text/html', value: htmlContent },
+          ],
+        }),
+      });
+      if (res.ok || res.status === 202) {
+        console.log(`Admin notification sent via SendGrid to ${adminEmail}`);
+        return { success: true };
+      }
+      console.warn('SendGrid admin notification failed:', res.statusText);
+    }
+
+    // 4. Default SMTP Transporter (e.g. Gmail SMTP, Custom SMTP)
+    if (config.user && config.pass) {
+      const transporter = createTransporter(config);
+      await transporter.sendMail({
+        from: `"${senderName}" <${senderEmail}>`,
+        to: adminEmail,
+        subject,
+        text: textContent,
+        html: htmlContent,
+      });
+      console.log(`Admin notification sent via SMTP to ${adminEmail}`);
+      return { success: true };
+    }
+
+    return { success: false, error: 'No valid email configuration available to send notification.' };
+  } catch (err: unknown) {
+    console.error(`Failed to send established SMTP notification to ${adminEmail}:`, err);
+    const errMessage = (err instanceof Error) ? err.message : String(err);
+    return { success: false, error: errMessage };
+  }
 }
 
 export async function verifySmtpConnection(config: Partial<SmtpConfig>): Promise<{ success: boolean; message: string }> {
@@ -98,6 +257,7 @@ export async function verifySmtpConnection(config: Partial<SmtpConfig>): Promise
       });
       const data = await res.json();
       if (res.status === 200 || res.status === 422 || (data.name && data.name !== 'invalid_api_key')) {
+        notifySmtpEstablished(config).catch((err) => console.error('Notification error on verify:', err));
         return { success: true, message: 'Resend HTTP API verified successfully! (Port 443 HTTPS - ISP Bypass)' };
       }
       if (data.message) {
@@ -119,7 +279,9 @@ export async function verifySmtpConnection(config: Partial<SmtpConfig>): Promise
       });
       const data = await res.json();
       if (res.ok && Array.isArray(data.senders)) {
-        const verifiedEmails = data.senders.filter((s: any) => s.active).map((s: any) => s.email.toLowerCase());
+        const verifiedEmails = (data.senders as Array<{ active?: boolean; email?: string }>)
+          .filter((s) => s.active && s.email)
+          .map((s) => (s.email || '').toLowerCase());
         const senderToCheck = (config.fromEmail || config.user || '').trim().toLowerCase();
 
         if (senderToCheck && !verifiedEmails.includes(senderToCheck)) {
@@ -128,6 +290,7 @@ export async function verifySmtpConnection(config: Partial<SmtpConfig>): Promise
             message: `⚠️ Brevo API Key is valid, but "${config.fromEmail}" is NOT verified in Brevo! Your verified sender is: "${verifiedEmails[0]}". Please change "Sender Email ID" to "${verifiedEmails[0]}" or add "${config.fromEmail}" at https://app.brevo.com/senders.`,
           };
         }
+        notifySmtpEstablished(config).catch((err) => console.error('Notification error on verify:', err));
         return {
           success: true,
           message: `Brevo HTTP API verified! Sender "${senderToCheck || verifiedEmails[0]}" is authorized (300 free emails/day).`,
@@ -147,6 +310,7 @@ export async function verifySmtpConnection(config: Partial<SmtpConfig>): Promise
         },
       });
       if (res.ok) {
+        notifySmtpEstablished(config).catch((err) => console.error('Notification error on verify:', err));
         return { success: true, message: 'SendGrid HTTP API verified successfully! (Port 443 HTTPS - ISP Bypass)' };
       }
       return { success: false, message: 'Invalid SendGrid API Key.' };
@@ -154,8 +318,9 @@ export async function verifySmtpConnection(config: Partial<SmtpConfig>): Promise
 
     const transporter = createTransporter(config);
     await transporter.verify();
+    notifySmtpEstablished(config).catch((err) => console.error('Notification error on verify:', err));
     return { success: true, message: 'SMTP connection verified successfully!' };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('SMTP Verification Error:', error);
     const port = Number(config.port || 465);
     return {
@@ -270,8 +435,9 @@ export async function sendEmailToRecipient(
         }
         return { success: false, error: `Resend HTTP API Error: ${errStr}` };
       }
-    } catch (err: any) {
-      return { success: false, error: `Resend HTTP Error: ${err?.message || String(err)}` };
+    } catch (err: unknown) {
+      const errMessage = (err instanceof Error) ? err.message : String(err);
+      return { success: false, error: `Resend HTTP Error: ${errMessage}` };
     }
   }
 
@@ -306,8 +472,9 @@ export async function sendEmailToRecipient(
       } else {
         return { success: false, error: `Brevo HTTP API Error: ${data.message || JSON.stringify(data)}` };
       }
-    } catch (err: any) {
-      return { success: false, error: `Brevo HTTP Error: ${err?.message || String(err)}` };
+    } catch (err: unknown) {
+      const errMessage = (err instanceof Error) ? err.message : String(err);
+      return { success: false, error: `Brevo HTTP Error: ${errMessage}` };
     }
   }
 
@@ -349,11 +516,12 @@ export async function sendEmailToRecipient(
         return { success: true, messageId: msgId };
       } else {
         const data = await res.json().catch(() => ({}));
-        const errStr = data.errors ? data.errors.map((e: any) => e.message).join(', ') : res.statusText;
+        const errStr = data.errors ? (data.errors as Array<{ message?: string }>).map((e) => e.message || '').join(', ') : res.statusText;
         return { success: false, error: `SendGrid API Error (${res.status}): ${errStr}` };
       }
-    } catch (err: any) {
-      return { success: false, error: `SendGrid HTTP Error: ${err?.message || String(err)}` };
+    } catch (err: unknown) {
+      const errMessage = (err instanceof Error) ? err.message : String(err);
+      return { success: false, error: `SendGrid HTTP Error: ${errMessage}` };
     }
   }
 
@@ -380,7 +548,7 @@ export async function sendEmailToRecipient(
     const info = await transporter.sendMail(mailOptions);
     console.log(`Email sent to ${recipient.email}:`, info.messageId);
     return { success: true, messageId: info.messageId };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error(`Failed to send email to ${recipient.email}:`, err);
     const port = Number(smtpConfig.port || 465);
     return {
@@ -472,7 +640,7 @@ export async function processNextBatchChunk(
   if (!isHttpApi) {
     try {
       transporter = createTransporter(batch.smtpConfig);
-    } catch (err: any) {
+    } catch (err: unknown) {
       batch.status = 'FAILED';
       saveBatch(batch);
       throw err;

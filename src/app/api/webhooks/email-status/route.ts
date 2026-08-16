@@ -90,8 +90,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, updatedCount });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Webhook error:', error);
-    return NextResponse.json({ error: error?.message || 'Failed to process webhook event.' }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Failed to process webhook event.';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
