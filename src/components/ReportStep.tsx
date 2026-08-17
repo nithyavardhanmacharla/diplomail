@@ -62,11 +62,13 @@ export const ReportStep: React.FC<ReportStepProps> = ({
         body: JSON.stringify({
           batchId: batchIdRef.current,
           apiKey: batch.smtpConfig?.pass,
-          recipients: batch.recipients.map((r) => ({
-            id: r.id,
-            providerMessageId: r.providerMessageId,
-            email: r.recipient?.email,
-          })),
+          recipients: batch.recipients
+            .filter(r => r.sendStatus !== 'SEEN' && r.providerMessageId)
+            .map((r) => ({
+              id: r.id,
+              providerMessageId: r.providerMessageId,
+              email: r.recipient?.email,
+            })),
         }),
       });
       const eventsData = await eventsRes.json().catch(() => ({}));

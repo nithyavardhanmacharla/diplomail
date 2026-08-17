@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     // If Resend API Key is provided and recipients have providerMessageIds, sync live status from Resend
     if (apiKey && typeof apiKey === 'string' && apiKey.startsWith('re_') && Array.isArray(recipients)) {
-      const candidates = recipients.filter((r: { providerMessageId?: string }) => Boolean(r.providerMessageId)).slice(0, 15);
+      const candidates = recipients.filter((r: { providerMessageId?: string }) => Boolean(r.providerMessageId)).slice(0, 50);
 
       await Promise.all(
         candidates.map(async (r: { id: string; providerMessageId: string }) => {

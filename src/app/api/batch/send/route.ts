@@ -20,8 +20,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Batch not found' }, { status: 404 });
     }
 
-    if (incomingBatch?.pdfs && (!batch.pdfs || batch.pdfs.length === 0 || !batch.pdfs[0].contentBase64)) {
-      batch.pdfs = incomingBatch.pdfs;
+    if (incomingBatch?.pdfs && incomingBatch.pdfs.length > 0) {
+      if (!batch.pdfs || batch.pdfs.length === 0) {
+        batch.pdfs = incomingBatch.pdfs;
+      } else {
+        // Merge incoming PDFs (which contain the base64 payload for the current chunk) into the batch
+        for (const incPdf of incomingBatch.pdfs) {
+          const existingIndex = batch.pdfs.findIndex((p) => p.id === incPdf.id || p.filename === incPdf.filename);
+          if (existingIndex >= 0) {
+            batch.pdfs[existingIndex] = { ...batch.pdfs[existingIndex], ...incPdf };
+          } else {
+            batch.pdfs.push(incPdf);
+          }
+        }
+      }
     }
 
     saveBatch(batch);

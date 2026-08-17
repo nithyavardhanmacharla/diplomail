@@ -69,9 +69,9 @@ function CertificateContent() {
         <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-xl p-4 text-xs text-indigo-200/90 text-left flex items-start gap-3">
           <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
           <div>
-            <p className="font-semibold text-slate-200">Attached Directly to Your Email</p>
+            <p className="font-semibold text-slate-200">Attached Directly to Your Email Inbox</p>
             <p className="mt-1 text-slate-400 leading-relaxed">
-              Your official PDF certificate (<strong className="text-slate-300">{filename}</strong>) is attached directly to the email sent to your inbox. You can open and save it anytime.
+              For security and privacy, your official PDF certificate (<strong className="text-slate-300">{filename}</strong>) is not hosted on this public page. It is securely attached directly to the email sent to your inbox. Please return to your email client to open and save it.
             </p>
           </div>
         </div>
