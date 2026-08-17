@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { SmtpConfig, MatchedRecipient, EmailTemplate, BatchSession, PdfFileInfo } from './types';
 import { interpolateTemplate } from './template';
-import { getUploadedPdfBuffer, saveBatch, getBatchById } from './storage';
+import { getUploadedPdfBuffer, getPdfBufferById, saveBatch, getBatchById } from './storage';
 
 export function isHttpApiProvider(config: Partial<SmtpConfig> | undefined): boolean {
   if (!config) return false;
@@ -357,13 +357,23 @@ export async function sendEmailToRecipient(
     return { success: false, error: 'No matching PDF certificate attached.' };
   }
 
-  const pdfInfo = pdfs.find((p) => p.id === matchedPdfId);
+  const pdfInfo = pdfs.find(
+    (p) =>
+      p.id === matchedPdfId ||
+      p.originalName === matchedPdfName ||
+      p.filename === matchedPdfName ||
+      p.id === matchedPdfName ||
+      (matchedPdfName && p.originalName?.toLowerCase() === matchedPdfName.toLowerCase()) ||
+      (matchedPdfName && p.filename?.toLowerCase() === matchedPdfName.toLowerCase())
+  );
   let pdfBuffer: Buffer | null = null;
 
   if (pdfInfo?.contentBase64) {
     pdfBuffer = Buffer.from(pdfInfo.contentBase64, 'base64');
   } else if (pdfInfo?.url) {
     pdfBuffer = getUploadedPdfBuffer(pdfInfo.url);
+  } else if (pdfInfo?.id) {
+    pdfBuffer = getPdfBufferById(pdfInfo.id);
   }
 
   if (!pdfBuffer) {
@@ -590,11 +600,17 @@ export async function processNextBatchChunk(
   batchId: string,
   onlyFailed = false,
   chunkSize = 2,
-  baseUrl?: string
+  baseUrl?: string,
+  inputBatch?: BatchSession
 ): Promise<{ success: boolean; done: boolean; batch: BatchSession }> {
-  const batch = getBatchById(batchId);
+  let batch = inputBatch || getBatchById(batchId);
   if (!batch) {
     throw new Error('Batch session not found.');
+  }
+
+  // If inputBatch provided and has PDF buffers, ensure they are merged
+  if (inputBatch?.pdfs && (!batch.pdfs || batch.pdfs.length === 0 || !batch.pdfs[0].contentBase64)) {
+    batch.pdfs = inputBatch.pdfs;
   }
 
   if (batch.status === 'PAUSED') {

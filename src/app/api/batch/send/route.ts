@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const baseUrl = `${protocol}://${host}`;
 
     // Synchronously process the next chunk of recipients
-    const result = await processNextBatchChunk(batchId, Boolean(onlyFailed), 2, baseUrl);
+    const result = await processNextBatchChunk(effectiveBatchId, Boolean(onlyFailed), 2, baseUrl, batch);
 
     return NextResponse.json(result);
   } catch (error: unknown) {

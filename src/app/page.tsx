@@ -213,6 +213,29 @@ export default function Home() {
     setCurrentStep('matching');
   };
 
+  const handleUpdateBatch = (updated: BatchSession) => {
+    setActiveBatch((prev) => {
+      if (!prev) return updated;
+      const mergedPdfs = (prev.pdfs && prev.pdfs.length > 0)
+        ? prev.pdfs.map((origPdf) => {
+            const updPdf = updated.pdfs?.find((p) => p.id === origPdf.id || p.filename === origPdf.filename);
+            return {
+              ...origPdf,
+              ...(updPdf || {}),
+              contentBase64: origPdf.contentBase64 || updPdf?.contentBase64,
+              blobUrl: origPdf.blobUrl || updPdf?.blobUrl,
+            };
+          })
+        : updated.pdfs;
+
+      return {
+        ...prev,
+        ...updated,
+        pdfs: mergedPdfs,
+      };
+    });
+  };
+
   const handleResetWizard = () => {
     setActiveBatch(null);
     setCurrentStep('upload');
@@ -250,7 +273,7 @@ export default function Home() {
         {currentStep === 'matching' && activeBatch && (
           <MatchingStep
             batch={activeBatch}
-            onUpdateBatch={(updated) => setActiveBatch(updated)}
+            onUpdateBatch={handleUpdateBatch}
             onProceedToCompose={() => setCurrentStep('compose')}
             onPreviewPdf={(pdf) => setPreviewPdf(pdf)}
           />
@@ -260,7 +283,7 @@ export default function Home() {
           <ComposeStep
             batch={activeBatch}
             smtpConfig={smtpConfig}
-            onUpdateBatch={(updated) => setActiveBatch(updated)}
+            onUpdateBatch={handleUpdateBatch}
             onOpenSmtpModal={() => setIsSmtpModalOpen(true)}
             onProceedToSend={() => setCurrentStep('sending')}
           />
@@ -270,7 +293,7 @@ export default function Home() {
           <SendingStep
             batch={activeBatch}
             smtpConfig={smtpConfig}
-            onUpdateBatch={(updated) => setActiveBatch(updated)}
+            onUpdateBatch={handleUpdateBatch}
             onProceedToReport={() => setCurrentStep('report')}
             onOpenSmtpModal={() => setIsSmtpModalOpen(true)}
           />
@@ -279,7 +302,7 @@ export default function Home() {
         {currentStep === 'report' && activeBatch && (
           <ReportStep
             batch={activeBatch}
-            onUpdateBatch={(updated) => setActiveBatch(updated)}
+            onUpdateBatch={handleUpdateBatch}
             onRestartNewBatch={handleResetWizard}
           />
         )}

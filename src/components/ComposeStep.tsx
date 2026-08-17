@@ -206,16 +206,16 @@ export const ComposeStep: React.FC<ComposeStepProps> = ({
         if (data.templates) setSavedTemplates(data.templates);
 
         // Update batch template
-        const updateRes = await fetch(`/api/batch/${batch.id}`, {
+        onUpdateBatch({
+          ...batch,
+          template: templateObj,
+        });
+
+        fetch(`/api/batch/${batch.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ template: templateObj }),
-        });
-
-        const updateData = await updateRes.json();
-        if (updateData.success && updateData.batch) {
-          onUpdateBatch(updateData.batch);
-        }
+        }).catch((e) => console.warn('Template sync warning:', e));
       }
     } catch (err) {
       console.error('Failed to save template:', err);
