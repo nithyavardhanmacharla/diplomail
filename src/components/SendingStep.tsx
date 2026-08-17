@@ -91,6 +91,7 @@ export const SendingStep: React.FC<SendingStepProps> = ({
             action: 'START',
             smtpConfig,
             onlyFailed,
+            origin: typeof window !== 'undefined' ? window.location.origin : undefined,
             batch: chunkPayloadBatch,
           }),
         });

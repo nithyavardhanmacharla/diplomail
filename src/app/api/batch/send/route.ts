@@ -4,7 +4,7 @@ import { getBatchById, saveBatch } from '@/lib/storage';
 
 export async function POST(req: NextRequest) {
   try {
-    const { batchId, action, smtpConfig, template, onlyFailed, batch: incomingBatch } = await req.json();
+    const { batchId, action, smtpConfig, template, onlyFailed, origin, batch: incomingBatch } = await req.json();
 
     const effectiveBatchId = batchId || incomingBatch?.id;
     if (!effectiveBatchId) {
@@ -60,10 +60,10 @@ export async function POST(req: NextRequest) {
 
     saveBatch(batch);
 
-    // Extract dynamic request origin (e.g. https://diplomail.netlify.app or http://localhost:3000)
+    // Extract dynamic request origin (e.g. https://diplomail.vercel.app or http://localhost:3000)
     const host = req.headers.get('host') || 'localhost:3000';
     const protocol = req.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
-    const baseUrl = `${protocol}://${host}`;
+    const baseUrl = origin || `${protocol}://${host}`;
 
     // Synchronously process the next chunk of recipients
     const result = await processNextBatchChunk(effectiveBatchId, Boolean(onlyFailed), 2, baseUrl, batch);

@@ -55,13 +55,27 @@ export const ReportStep: React.FC<ReportStepProps> = ({
   // Stable fetch function
   const fetchBatchStatus = useCallback(async () => {
     try {
-      // 1. Fetch tracking events
-      const eventsRes = await fetch(`/api/track/events?batchId=${batchIdRef.current}`);
+      // 1. Fetch live tracking events (including provider-level open tracking)
+      const eventsRes = await fetch('/api/track/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          batchId: batchIdRef.current,
+          apiKey: batch.smtpConfig?.pass,
+          recipients: batch.recipients.map((r) => ({
+            id: r.id,
+            providerMessageId: r.providerMessageId,
+            email: r.recipient?.email,
+          })),
+        }),
+      });
       const eventsData = await eventsRes.json().catch(() => ({}));
 
       if (eventsData.success && Array.isArray(eventsData.events) && eventsData.events.length > 0) {
         const openedRecipientIds = new Set(
-          eventsData.events.filter((e: { eventType: string }) => e.eventType === 'OPEN' || e.eventType === 'CLICK').map((e: { recipientId: string }) => e.recipientId)
+          eventsData.events
+            .filter((e: { eventType: string }) => e.eventType === 'OPEN' || e.eventType === 'CLICK')
+            .map((e: { recipientId: string }) => e.recipientId)
         );
 
         if (openedRecipientIds.size > 0) {
