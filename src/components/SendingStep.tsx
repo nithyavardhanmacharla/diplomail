@@ -54,16 +54,44 @@ export const SendingStep: React.FC<SendingStepProps> = ({
 
     try {
       let done = false;
+      let currentBatch = batch;
+
       while (!done && isLoopingRef.current) {
+        // Find next candidates to send
+        const pendingCandidates = currentBatch.recipients.filter((r) =>
+          onlyFailed
+            ? r.sendStatus === 'FAILED'
+            : (r.sendStatus === 'PENDING' && r.status !== 'EXCLUDED' && r.status !== 'UNMATCHED')
+        );
+
+        if (pendingCandidates.length === 0) {
+          done = true;
+          break;
+        }
+
+        const chunk = pendingCandidates.slice(0, 2);
+        const chunkPdfIds = new Set(chunk.map((r) => r.matchedPdfId).filter(Boolean));
+        const chunkPdfNames = new Set(chunk.map((r) => r.matchedPdfName).filter(Boolean));
+
+        // Send ONLY the PDFs needed for this 2-recipient chunk
+        const chunkPdfs = (currentBatch.pdfs || []).filter(
+          (p) => chunkPdfIds.has(p.id) || chunkPdfNames.has(p.filename) || chunkPdfNames.has(p.originalName)
+        );
+
+        const chunkPayloadBatch: BatchSession = {
+          ...currentBatch,
+          pdfs: chunkPdfs,
+        };
+
         const res = await fetch('/api/batch/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            batchId: batch.id,
+            batchId: currentBatch.id,
             action: 'START',
             smtpConfig,
             onlyFailed,
-            batch,
+            batch: chunkPayloadBatch,
           }),
         });
 
@@ -79,7 +107,21 @@ export const SendingStep: React.FC<SendingStepProps> = ({
         }
 
         if (data.batch) {
-          onUpdateBatch(data.batch);
+          // Merge server results into client batch while preserving all local PDFs
+          const updatedRecipients = currentBatch.recipients.map((r) => {
+            const upd = data.batch?.recipients?.find((u) => u.id === r.id);
+            return upd ? { ...r, ...upd } : r;
+          });
+
+          const mergedBatch: BatchSession = {
+            ...currentBatch,
+            ...data.batch,
+            recipients: updatedRecipients,
+            pdfs: currentBatch.pdfs,
+          };
+
+          currentBatch = mergedBatch;
+          onUpdateBatch(mergedBatch);
         }
 
         if (data.done || data.batch?.status === 'COMPLETED' || data.batch?.status === 'PAUSED') {
@@ -89,6 +131,9 @@ export const SendingStep: React.FC<SendingStepProps> = ({
           }
           break;
         }
+
+        // Brief delay between chunks
+        await new Promise((resolve) => setTimeout(resolve, 300));
       }
     } catch (err: unknown) {
       console.error('Failed dispatch chunk:', err);
