@@ -216,6 +216,31 @@ export default function Home() {
   const handleUpdateBatch = (updated: BatchSession) => {
     setActiveBatch((prev) => {
       if (!prev) return updated;
+
+      // Merge recipients: Ensure SEEN / DELIVERED statuses are never downgraded
+      const mergedRecipients = (prev.recipients && prev.recipients.length > 0)
+        ? prev.recipients.map((origR) => {
+            const updR = updated.recipients?.find((r) => r.id === origR.id);
+            if (!updR) return origR;
+
+            // Forward-only progression: SEEN is permanent
+            const isSeen = origR.sendStatus === 'SEEN' || updR.sendStatus === 'SEEN';
+            const isDelivered = origR.sendStatus === 'DELIVERED' || updR.sendStatus === 'DELIVERED' || isSeen;
+
+            let finalStatus = updR.sendStatus || origR.sendStatus;
+            if (isSeen) finalStatus = 'SEEN';
+            else if (isDelivered && finalStatus !== 'FAILED' && finalStatus !== 'SKIPPED') finalStatus = 'DELIVERED';
+
+            return {
+              ...origR,
+              ...updR,
+              sendStatus: finalStatus,
+              seenAt: origR.seenAt || updR.seenAt,
+              deliveredAt: origR.deliveredAt || updR.deliveredAt,
+            };
+          })
+        : updated.recipients;
+
       const mergedPdfs = (prev.pdfs && prev.pdfs.length > 0)
         ? prev.pdfs.map((origPdf) => {
             const updPdf = updated.pdfs?.find((p) => p.id === origPdf.id || p.filename === origPdf.filename);
@@ -228,10 +253,23 @@ export default function Home() {
           })
         : updated.pdfs;
 
+      const finalStats = {
+        ...prev.stats,
+        ...updated.stats,
+        total: mergedRecipients.length,
+        seen: mergedRecipients.filter((r) => r.sendStatus === 'SEEN').length,
+        delivered: mergedRecipients.filter((r) => r.sendStatus === 'DELIVERED' || r.sendStatus === 'SEEN').length,
+        sent: mergedRecipients.filter((r) => r.sendStatus === 'SENT' || r.sendStatus === 'DELIVERED' || r.sendStatus === 'SEEN').length,
+        failed: mergedRecipients.filter((r) => r.sendStatus === 'FAILED').length,
+        skipped: mergedRecipients.filter((r) => r.sendStatus === 'SKIPPED').length,
+      };
+
       return {
         ...prev,
         ...updated,
+        recipients: mergedRecipients,
         pdfs: mergedPdfs,
+        stats: finalStats,
       };
     });
   };

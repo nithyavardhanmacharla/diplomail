@@ -121,6 +121,23 @@ export function saveBatch(batch: BatchSession): void {
 
   batch.updatedAt = new Date().toISOString();
 
+  // Save any base64 PDFs to uploads directory for instant inline serving
+  if (batch.pdfs && Array.isArray(batch.pdfs)) {
+    for (const pdf of batch.pdfs) {
+      if (pdf.contentBase64) {
+        try {
+          const buf = Buffer.from(pdf.contentBase64, 'base64');
+          const savedPath = saveUploadedPdfFile(pdf.id, pdf.filename || pdf.originalName, buf);
+          if (!pdf.url) {
+            pdf.url = savedPath;
+          }
+        } catch (e) {
+          console.warn('Could not cache PDF buffer to disk:', e);
+        }
+      }
+    }
+  }
+
   if (index >= 0) {
     batches[index] = batch;
   } else {
