@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { Upload, FileSpreadsheet, FileArchive, CheckCircle, AlertTriangle, ArrowRight, Download, Sparkles, X, Scissors } from 'lucide-react';
+import { Upload, FileSpreadsheet, FileArchive, CheckCircle, AlertTriangle, ArrowRight, Download, Sparkles, X, Scissors, RefreshCw } from 'lucide-react';
 import { BatchSession } from '@/lib/types';
+import { parseSpreadsheetClient, processPdfsClient, createClientBatchSession } from '@/lib/client-processor';
 
 interface UploadStepProps {
   onUploadSuccess: (batch: BatchSession) => void;
@@ -12,6 +13,7 @@ export const UploadStep: React.FC<UploadStepProps> = ({ onUploadSuccess }) => {
   const [spreadsheet, setSpreadsheet] = useState<File | null>(null);
   const [pdfs, setPdfs] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [progressStatus, setProgressStatus] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const spreadsheetInputRef = useRef<HTMLInputElement>(null);
@@ -21,7 +23,7 @@ export const UploadStep: React.FC<UploadStepProps> = ({ onUploadSuccess }) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      if (/\.(csv|xlsx|xls)$/i.test(file.name)) {
+      if (/\.(csv|xlsx|xls|txt)$/i.test(file.name)) {
         setSpreadsheet(file);
         setErrorMessage(null);
       } else {
@@ -57,30 +59,53 @@ export const UploadStep: React.FC<UploadStepProps> = ({ onUploadSuccess }) => {
 
     setIsUploading(true);
     setErrorMessage(null);
+    setProgressStatus('Reading recipient spreadsheet...');
 
     try {
-      const formData = new FormData();
-      formData.append('spreadsheet', spreadsheet);
-      pdfs.forEach((file) => formData.append('pdfs', file));
+      // 1. Client-Side Spreadsheet Parsing
+      const recipients = await parseSpreadsheetClient(spreadsheet);
 
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      // 2. Client-Side PDF Certificate Processing
+      setProgressStatus(`Processing ${pdfs.length} certificate file(s)...`);
+      const pdfList = await processPdfsClient(pdfs, recipients, (status) => {
+        setProgressStatus(status);
       });
 
-      const data = await res.json();
+      // 3. Smart Matching & Batch Session Creation
+      setProgressStatus('Auto-matching recipient names to certificates...');
+      const batchSession = createClientBatchSession(spreadsheet.name, recipients, pdfList);
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to upload and match files.');
+      // 4. Background Sync to Server (Non-blocking)
+      try {
+        // Send lightweight batch metadata to server
+        const lightweightBatch = {
+          ...batchSession,
+          pdfs: batchSession.pdfs.map((p) => ({
+            id: p.id,
+            filename: p.filename,
+            originalName: p.originalName,
+            size: p.size,
+          })),
+        };
+
+        fetch('/api/batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ batch: lightweightBatch }),
+        }).catch((e) => console.warn('Server background sync skipped:', e));
+      } catch (syncErr) {
+        console.warn('Sync notice:', syncErr);
       }
 
-      onUploadSuccess(data.batch);
+      // Hand off to Step 2 (Matching)
+      onUploadSuccess(batchSession);
     } catch (err: unknown) {
       console.error('Upload Error:', err);
-      const message = err instanceof Error ? err.message : 'Error processing files.';
+      const message = err instanceof Error ? err.message : 'Error processing files. Please verify the spreadsheet and PDF files.';
       setErrorMessage(message);
     } finally {
       setIsUploading(false);
+      setProgressStatus('');
     }
   };
 
@@ -147,7 +172,7 @@ export const UploadStep: React.FC<UploadStepProps> = ({ onUploadSuccess }) => {
           <input
             type="file"
             ref={spreadsheetInputRef}
-            accept=".csv, .xlsx, .xls"
+            accept=".csv, .xlsx, .xls, .txt"
             className="hidden"
             onChange={(e) => {
               if (e.target.files && e.target.files[0]) {
@@ -258,8 +283,8 @@ export const UploadStep: React.FC<UploadStepProps> = ({ onUploadSuccess }) => {
         >
           {isUploading ? (
             <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Running Matching Engine...</span>
+              <RefreshCw className="w-4 h-4 text-white animate-spin" />
+              <span>{progressStatus || 'Running Matching Engine...'}</span>
             </>
           ) : (
             <>

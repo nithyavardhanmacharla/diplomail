@@ -4,16 +4,27 @@ import { getBatchById, saveBatch } from '@/lib/storage';
 
 export async function POST(req: NextRequest) {
   try {
-    const { batchId, action, smtpConfig, template, onlyFailed } = await req.json();
+    const { batchId, action, smtpConfig, template, onlyFailed, batch: incomingBatch } = await req.json();
 
-    if (!batchId) {
+    const effectiveBatchId = batchId || incomingBatch?.id;
+    if (!effectiveBatchId) {
       return NextResponse.json({ error: 'batchId is required' }, { status: 400 });
     }
 
-    const batch = getBatchById(batchId);
+    let batch = getBatchById(effectiveBatchId);
+    if (!batch && incomingBatch) {
+      batch = incomingBatch;
+    }
+
     if (!batch) {
       return NextResponse.json({ error: 'Batch not found' }, { status: 404 });
     }
+
+    if (incomingBatch?.pdfs && (!batch.pdfs || batch.pdfs.length === 0 || !batch.pdfs[0].contentBase64)) {
+      batch.pdfs = incomingBatch.pdfs;
+    }
+
+    saveBatch(batch);
 
     if (action === 'PAUSE') {
       batch.status = 'PAUSED';

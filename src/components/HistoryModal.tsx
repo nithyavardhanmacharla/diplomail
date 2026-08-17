@@ -21,17 +21,37 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   useEffect(() => {
     let isMounted = true;
     if (isOpen) {
+      // 1. Read local storage batches immediately
+      let localBatches: BatchSession[] = [];
+      try {
+        const raw = localStorage.getItem('diplomail_batches');
+        if (raw) localBatches = JSON.parse(raw);
+      } catch (e) {
+        console.warn('Failed reading localStorage batches:', e);
+      }
+
+      // 2. Fetch server batches and merge
       fetch('/api/batches')
-        .then((res) => res.json())
+        .then((res) => (res.ok ? res.json() : { batches: [] }))
         .then((data) => {
           if (isMounted) {
-            if (data.batches) setBatches(data.batches);
+            const serverBatches: BatchSession[] = data.batches || [];
+            const mergedMap = new Map<string, BatchSession>();
+            localBatches.forEach((b) => mergedMap.set(b.id, b));
+            serverBatches.forEach((b) => mergedMap.set(b.id, b));
+            const merged = Array.from(mergedMap.values()).sort(
+              (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            );
+            setBatches(merged);
             setIsLoading(false);
           }
         })
         .catch((err) => {
-          console.error('Failed to load batch history:', err);
-          if (isMounted) setIsLoading(false);
+          console.error('Failed to load batch history from server:', err);
+          if (isMounted) {
+            setBatches(localBatches);
+            setIsLoading(false);
+          }
         });
     }
     return () => {
@@ -44,8 +64,19 @@ export const HistoryModal: React.FC<HistoryModalProps> = ({
   const handleDeleteBatch = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await fetch(`/api/batch/${id}`, { method: 'DELETE' });
+      // Remove from localStorage
+      try {
+        const raw = localStorage.getItem('diplomail_batches');
+        if (raw) {
+          const existing: BatchSession[] = JSON.parse(raw);
+          localStorage.setItem('diplomail_batches', JSON.stringify(existing.filter((b) => b.id !== id)));
+        }
+      } catch (e) {
+        console.warn('Failed to delete from localStorage:', e);
+      }
+
       setBatches((prev) => prev.filter((b) => b.id !== id));
+      await fetch(`/api/batch/${id}`, { method: 'DELETE' }).catch(() => {});
     } catch (err) {
       console.error('Failed to delete batch:', err);
     }

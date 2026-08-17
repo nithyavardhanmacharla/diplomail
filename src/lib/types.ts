@@ -17,6 +17,7 @@ export interface PdfFileInfo {
   originalName: string;
   size: number;
   url?: string;
+  blobUrl?: string;
   contentBase64?: string;
 }
 

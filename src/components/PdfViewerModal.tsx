@@ -15,7 +15,9 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({ pdf, onClose }) 
   if (!pdf) return null;
 
   // Determine the best source URL for the PDF
-  const pdfUrl = pdf.id
+  const pdfUrl = pdf.blobUrl
+    ? pdf.blobUrl
+    : pdf.id
     ? `/api/upload?pdfId=${encodeURIComponent(pdf.id)}`
     : pdf.url
     ? `/api/upload?pdfPath=${encodeURIComponent(pdf.url)}`

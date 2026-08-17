@@ -53,60 +53,89 @@ export const MatchingStep: React.FC<MatchingStepProps> = ({
   });
 
   const handleOverridePdf = async (recipientId: string, pdfId: string | null) => {
-    setIsSaving(true);
-    try {
-      let status: MatchStatus = 'MANUAL_OVERRIDE';
-      let matchedPdfId = pdfId;
+    let status: MatchStatus = 'MANUAL_OVERRIDE';
+    let matchedPdfId = pdfId;
 
-      if (!pdfId) {
-        status = 'UNMATCHED';
-        matchedPdfId = null;
-      } else if (pdfId === 'EXCLUDE') {
-        status = 'EXCLUDED';
-        matchedPdfId = null;
-      }
-
-      const res = await fetch(`/api/batch/${batch.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          recipientUpdates: [{ recipientId, matchedPdfId, status }],
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success && data.batch) {
-        onUpdateBatch(data.batch);
-      }
-    } catch (err) {
-      console.error('Failed to update recipient PDF override:', err);
-    } finally {
-      setIsSaving(false);
+    if (!pdfId) {
+      status = 'UNMATCHED';
+      matchedPdfId = null;
+    } else if (pdfId === 'EXCLUDE') {
+      status = 'EXCLUDED';
+      matchedPdfId = null;
     }
+
+    const updatedRecipients = batch.recipients.map((r) => {
+      if (r.id === recipientId) {
+        const pdf = batch.pdfs.find((p) => p.id === matchedPdfId);
+        return {
+          ...r,
+          matchedPdfId,
+          matchedPdfName: pdf ? pdf.originalName : null,
+          status,
+          confidenceScore: matchedPdfId ? 1.0 : 0,
+        };
+      }
+      return r;
+    });
+
+    const updatedBatch: BatchSession = {
+      ...batch,
+      recipients: updatedRecipients,
+      stats: {
+        ...batch.stats,
+        matched: updatedRecipients.filter((r) => r.status === 'MATCHED_EXACT' || r.status === 'MATCHED_FUZZY' || r.status === 'MANUAL_OVERRIDE').length,
+        unmatched: updatedRecipients.filter((r) => r.status === 'UNMATCHED').length,
+        skipped: updatedRecipients.filter((r) => r.status === 'EXCLUDED').length,
+      },
+    };
+
+    onUpdateBatch(updatedBatch);
+
+    // Sync to server in background (non-blocking)
+    fetch(`/api/batch/${batch.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientUpdates: [{ recipientId, matchedPdfId, status }],
+      }),
+    }).catch((err) => console.warn('Background sync warning:', err));
   };
 
   const handleExcludeUnmatched = async () => {
-    setIsSaving(true);
-    try {
-      const updates = recipients
-        .filter((r) => r.status === 'UNMATCHED')
-        .map((r) => ({ recipientId: r.id, matchedPdfId: null, status: 'EXCLUDED' as MatchStatus }));
-
-      const res = await fetch(`/api/batch/${batch.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientUpdates: updates }),
-      });
-
-      const data = await res.json();
-      if (data.success && data.batch) {
-        onUpdateBatch(data.batch);
+    const updatedRecipients = batch.recipients.map((r) => {
+      if (r.status === 'UNMATCHED') {
+        return {
+          ...r,
+          status: 'EXCLUDED' as MatchStatus,
+          matchedPdfId: null,
+          matchedPdfName: null,
+        };
       }
-    } catch (err) {
-      console.error('Failed to exclude unmatched:', err);
-    } finally {
-      setIsSaving(false);
-    }
+      return r;
+    });
+
+    const updatedBatch: BatchSession = {
+      ...batch,
+      recipients: updatedRecipients,
+      stats: {
+        ...batch.stats,
+        matched: updatedRecipients.filter((r) => r.status === 'MATCHED_EXACT' || r.status === 'MATCHED_FUZZY' || r.status === 'MANUAL_OVERRIDE').length,
+        unmatched: 0,
+        skipped: updatedRecipients.filter((r) => r.status === 'EXCLUDED').length,
+      },
+    };
+
+    onUpdateBatch(updatedBatch);
+
+    const updates = recipients
+      .filter((r) => r.status === 'UNMATCHED')
+      .map((r) => ({ recipientId: r.id, matchedPdfId: null, status: 'EXCLUDED' as MatchStatus }));
+
+    fetch(`/api/batch/${batch.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipientUpdates: updates }),
+    }).catch((err) => console.warn('Background sync warning:', err));
   };
 
   const [isDownloadingZip, setIsDownloadingZip] = useState(false);
@@ -122,14 +151,27 @@ export const MatchingStep: React.FC<MatchingStepProps> = ({
           const pdfObj = pdfs.find((p) => p.id === item.matchedPdfId);
           if (pdfObj) {
             let buffer: ArrayBuffer | null = null;
-            if (pdfObj.contentBase64) {
+            if (pdfObj.blobUrl) {
+              try {
+                const res = await fetch(pdfObj.blobUrl);
+                if (res.ok) buffer = await res.arrayBuffer();
+              } catch (e) {
+                console.warn('Failed to fetch blobUrl for zip:', e);
+              }
+            }
+            if (!buffer && pdfObj.contentBase64) {
               const bin = atob(pdfObj.contentBase64);
               const bytes = new Uint8Array(bin.length);
               for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
               buffer = bytes.buffer;
-            } else {
-              const res = await fetch(`/api/upload?pdfId=${encodeURIComponent(pdfObj.id)}`);
-              if (res.ok) buffer = await res.arrayBuffer();
+            }
+            if (!buffer && pdfObj.id) {
+              try {
+                const res = await fetch(`/api/upload?pdfId=${encodeURIComponent(pdfObj.id)}`);
+                if (res.ok) buffer = await res.arrayBuffer();
+              } catch (e) {
+                console.warn('Failed to fetch from api for zip:', e);
+              }
             }
 
             if (buffer) {

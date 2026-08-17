@@ -63,10 +63,17 @@ export const SendingStep: React.FC<SendingStepProps> = ({
             action: 'START',
             smtpConfig,
             onlyFailed,
+            batch,
           }),
         });
 
-        const data = await res.json();
+        let data: { success?: boolean; error?: string; batch?: BatchSession; done?: boolean } = {};
+        try {
+          data = await res.json();
+        } catch {
+          throw new Error(`Server response error (HTTP ${res.status}). Please check your connection.`);
+        }
+
         if (!res.ok || !data.success) {
           throw new Error(data.error || 'Failed to dispatch email batch.');
         }
