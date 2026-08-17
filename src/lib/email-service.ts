@@ -388,7 +388,7 @@ export async function sendEmailToRecipient(
   // 3. Absolute URLs for dual open tracking (pixel + certificate button link)
   const appBaseUrl = baseUrl || process.env.NEXT_PUBLIC_APP_URL || process.env.URL || 'http://localhost:3000';
   const trackingUrl = `${appBaseUrl}/api/track/click?batchId=${batchId}&recipientId=${recipientItem.id}`;
-  const trackingPixelHtml = `<img src="${appBaseUrl}/api/track/open?batchId=${batchId}&recipientId=${recipientItem.id}" width="1" height="1" alt="" style="display:none;" />`;
+  const trackingPixelHtml = `<img src="${appBaseUrl}/api/track/open?batchId=${batchId}&recipientId=${recipientItem.id}" width="1" height="1" alt="" style="width:1px;height:1px;opacity:0.01;pointer-events:none;border:0;display:block;" />`;
 
   const subject = interpolateTemplate(template.subject || recipient.subject || 'Your Certificate', recipient, matchedPdfName, trackingUrl);
   const rawBodyHtml = interpolateTemplate(template.bodyHtml || template.bodyText, recipient, matchedPdfName, trackingUrl);

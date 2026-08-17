@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBatchById, saveBatch } from '@/lib/storage';
+import { getBatchById, saveBatch, recordTrackingEvent } from '@/lib/storage';
 
 // 1x1 transparent GIF binary buffer
 const PIXEL_BUFFER = Buffer.from(
@@ -11,14 +11,20 @@ const TRACKING_HEADERS: Record<string, string> = {
   'Content-Type': 'image/gif',
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'Access-Control-Allow-Headers': '*',
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0',
   'Pragma': 'no-cache',
   'Expires': '0',
+  'Surrogate-Control': 'no-store',
 };
 
 function isAutomatedSecurityScanner(req: NextRequest): boolean {
   const userAgent = (req.headers.get('user-agent') || '').toLowerCase();
+
+  // Allow Google Image Proxy (used by Gmail to display images)
+  if (userAgent.includes('googleimageproxy') || userAgent.includes('ggpht')) {
+    return false;
+  }
 
   // Filter out anti-spam email scanners and automated CLI tools that scan before delivery
   const scannerKeywords = [
@@ -26,27 +32,15 @@ function isAutomatedSecurityScanner(req: NextRequest): boolean {
     'barracuda',
     'proofpoint',
     'fireeye',
-    'checker',
     'curl',
     'wget',
-    'python',
+    'python-requests',
     'postman',
-    'headless',
     'pingdom',
     'uptimerobot',
   ];
 
-  if (scannerKeywords.some((kw) => userAgent.includes(kw))) {
-    return true;
-  }
-
-  // Pre-fetch headers sent by automated crawlers
-  const purpose = req.headers.get('purpose') || req.headers.get('x-purpose') || req.headers.get('sec-purpose') || '';
-  if (purpose.toLowerCase().includes('prefetch')) {
-    return true;
-  }
-
-  return false;
+  return scannerKeywords.some((kw) => userAgent.includes(kw));
 }
 
 /** Handle CORS preflight for cross-origin tracking pixel loads */
@@ -63,23 +57,26 @@ export async function GET(req: NextRequest) {
     const batchId = searchParams.get('batchId');
     const recipientId = searchParams.get('recipientId');
 
-    // Check if this is an internal simulate-open call from the same origin
-    const referer = req.headers.get('referer') || '';
-    const host = req.headers.get('host') || '';
-    const isInternalCall = referer.includes(host);
-
-    // Only count as open if not an automated security scanner
-    // Always allow internal simulate-open calls through
-    const isScanner = !isInternalCall && isAutomatedSecurityScanner(req);
+    const userAgent = req.headers.get('user-agent') || '';
+    const isScanner = isAutomatedSecurityScanner(req);
 
     if (batchId && recipientId && !isScanner) {
+      const now = new Date().toISOString();
+
+      // 1. Record persistent tracking event
+      recordTrackingEvent({
+        batchId,
+        recipientId,
+        eventType: 'OPEN',
+        timestamp: now,
+        userAgent,
+      });
+
+      // 2. Update batch on disk if available
       const batch = getBatchById(batchId);
       if (batch) {
         const recipient = batch.recipients.find((r) => r.id === recipientId);
         if (recipient) {
-          const now = new Date().toISOString();
-
-          // Idempotent state machine: SENT -> DELIVERED -> SEEN
           if (recipient.sendStatus !== 'SEEN') {
             recipient.sendStatus = 'SEEN';
             recipient.seenAt = recipient.seenAt || now;

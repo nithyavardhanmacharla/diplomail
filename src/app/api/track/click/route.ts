@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBatchById, saveBatch, getUploadedPdfBuffer } from '@/lib/storage';
+import { getBatchById, saveBatch, getUploadedPdfBuffer, getPdfBufferById, recordTrackingEvent } from '@/lib/storage';
 
 export async function GET(req: NextRequest) {
   try {
@@ -8,12 +8,21 @@ export async function GET(req: NextRequest) {
     const recipientId = searchParams.get('recipientId');
 
     if (batchId && recipientId) {
+      const now = new Date().toISOString();
+      const userAgent = req.headers.get('user-agent') || '';
+
+      recordTrackingEvent({
+        batchId,
+        recipientId,
+        eventType: 'CLICK',
+        timestamp: now,
+        userAgent,
+      });
+
       const batch = getBatchById(batchId);
       if (batch) {
         const recipientItem = batch.recipients.find((r) => r.id === recipientId);
         if (recipientItem) {
-          const now = new Date().toISOString();
-
           // Verified 100% Genuine Human Open (Recipient clicked their certificate link)
           recipientItem.sendStatus = 'SEEN';
           recipientItem.seenAt = recipientItem.seenAt || now;

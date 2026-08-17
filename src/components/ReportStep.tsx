@@ -55,16 +55,60 @@ export const ReportStep: React.FC<ReportStepProps> = ({
   // Stable fetch function
   const fetchBatchStatus = useCallback(async () => {
     try {
-      const res = await fetch(`/api/batch/${batchIdRef.current}`);
-      const data = await res.json();
-      if (data.batch) {
-        onUpdateBatchRef.current(data.batch);
-        setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      // 1. Fetch tracking events
+      const eventsRes = await fetch(`/api/track/events?batchId=${batchIdRef.current}`);
+      const eventsData = await eventsRes.json().catch(() => ({}));
+
+      if (eventsData.success && Array.isArray(eventsData.events) && eventsData.events.length > 0) {
+        const openedRecipientIds = new Set(
+          eventsData.events.filter((e: { eventType: string }) => e.eventType === 'OPEN' || e.eventType === 'CLICK').map((e: { recipientId: string }) => e.recipientId)
+        );
+
+        if (openedRecipientIds.size > 0) {
+          const currentBatch = batch;
+          let hasUpdates = false;
+          const updatedRecipients = currentBatch.recipients.map((r) => {
+            if (openedRecipientIds.has(r.id) && r.sendStatus !== 'SEEN') {
+              hasUpdates = true;
+              const ev = eventsData.events.find((e: { recipientId: string }) => e.recipientId === r.id);
+              return {
+                ...r,
+                sendStatus: 'SEEN' as const,
+                seenAt: r.seenAt || ev?.timestamp || new Date().toISOString(),
+                deliveredAt: r.deliveredAt || ev?.timestamp || new Date().toISOString(),
+              };
+            }
+            return r;
+          });
+
+          if (hasUpdates) {
+            const updatedBatch: BatchSession = {
+              ...currentBatch,
+              recipients: updatedRecipients,
+              stats: {
+                ...currentBatch.stats,
+                seen: updatedRecipients.filter((r) => r.sendStatus === 'SEEN').length,
+                delivered: updatedRecipients.filter((r) => r.sendStatus === 'DELIVERED' || r.sendStatus === 'SEEN').length,
+              },
+            };
+            onUpdateBatchRef.current(updatedBatch);
+          }
+        }
       }
+
+      // 2. Fetch server batch if available
+      const res = await fetch(`/api/batch/${batchIdRef.current}`);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.batch) {
+          onUpdateBatchRef.current(data.batch);
+        }
+      }
+      setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err) {
       console.error('Polling batch status failed:', err);
     }
-  }, []);
+  }, [batch]);
 
   // Live polling for status updates every 5 seconds — stabilized with refs
   useEffect(() => {
@@ -94,16 +138,37 @@ export const ReportStep: React.FC<ReportStepProps> = ({
 
   const handleSimulateOpen = async (recipientId: string) => {
     setSimulatingId(recipientId);
-    try {
-      await fetch(`/api/track/open?batchId=${batch.id}&recipientId=${recipientId}`);
-      // Small delay to let server persist
-      await new Promise((r) => setTimeout(r, 300));
-      const fetchRes = await fetch(`/api/batch/${batch.id}`);
-      const fetchData = await fetchRes.json();
-      if (fetchData.batch) {
-        onUpdateBatch(fetchData.batch);
-        setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    const now = new Date().toISOString();
+
+    // 1. Instant optimistic state update
+    const updatedRecipients = batch.recipients.map((r) => {
+      if (r.id === recipientId) {
+        return {
+          ...r,
+          sendStatus: 'SEEN' as const,
+          seenAt: r.seenAt || now,
+          deliveredAt: r.deliveredAt || now,
+        };
       }
+      return r;
+    });
+
+    const updatedBatch: BatchSession = {
+      ...batch,
+      recipients: updatedRecipients,
+      stats: {
+        ...batch.stats,
+        seen: updatedRecipients.filter((r) => r.sendStatus === 'SEEN').length,
+        delivered: updatedRecipients.filter((r) => r.sendStatus === 'DELIVERED' || r.sendStatus === 'SEEN').length,
+      },
+    };
+
+    onUpdateBatch(updatedBatch);
+    setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+
+    // 2. Trigger server tracking pixel endpoint in background
+    try {
+      await fetch(`/api/track/open?batchId=${batch.id}&recipientId=${recipientId}`).catch(() => {});
     } catch (err) {
       console.error('Failed to trigger open tracking pixel:', err);
     } finally {

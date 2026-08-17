@@ -227,3 +227,57 @@ export function saveSmtpConfig(config: Partial<SmtpConfig>): void {
     console.error('Failed to save SMTP config:', err);
   }
 }
+
+export interface TrackingEvent {
+  batchId: string;
+  recipientId: string;
+  eventType: 'OPEN' | 'CLICK' | 'DELIVERED';
+  timestamp: string;
+  userAgent?: string;
+  ip?: string;
+}
+
+function getEventsFile(): string {
+  return path.join(getDataDir(), 'tracking_events.json');
+}
+
+export function recordTrackingEvent(event: TrackingEvent): void {
+  ensureDirectories();
+  const file = getEventsFile();
+  let events: TrackingEvent[] = [];
+  try {
+    if (fs.existsSync(file)) {
+      events = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    }
+  } catch (e) {
+    console.warn('Error reading tracking events file:', e);
+  }
+
+  const isDuplicate = events.some(
+    (e) => e.batchId === event.batchId && e.recipientId === event.recipientId && e.eventType === event.eventType
+  );
+
+  if (!isDuplicate) {
+    events.push(event);
+    try {
+      fs.writeFileSync(file, JSON.stringify(events.slice(-500), null, 2), 'utf-8');
+    } catch (e) {
+      console.error('Failed writing tracking event:', e);
+    }
+  }
+}
+
+export function getTrackingEvents(batchId: string): TrackingEvent[] {
+  ensureDirectories();
+  const file = getEventsFile();
+  try {
+    if (fs.existsSync(file)) {
+      const events: TrackingEvent[] = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      return events.filter((e) => e.batchId === batchId);
+    }
+  } catch (e) {
+    console.error('Error reading tracking events:', e);
+  }
+  return [];
+}
+
