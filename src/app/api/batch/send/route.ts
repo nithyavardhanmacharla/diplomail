@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { processNextBatchChunk, createTransporter } from '@/lib/email-service';
 import { getBatchById, saveBatch } from '@/lib/storage';
 
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 export async function POST(req: NextRequest) {
   try {
     const { batchId, action, smtpConfig, template, onlyFailed, origin, batch: incomingBatch } = await req.json();
