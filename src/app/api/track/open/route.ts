@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBatchById, saveBatch, recordTrackingEvent } from '@/lib/storage';
 
+export const dynamic = 'force-dynamic';
+
 // 1x1 transparent GIF binary buffer
 const PIXEL_BUFFER = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',

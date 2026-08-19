@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTrackingEvents, recordTrackingEvent, TrackingEvent } from '@/lib/storage';
+import { getTrackingEvents, recordTrackingEvent, getSavedSmtpConfig, TrackingEvent } from '@/lib/storage';
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
@@ -36,26 +36,25 @@ export async function POST(req: NextRequest) {
       eventsMap.set(`${ev.recipientId}_${ev.eventType}`, ev);
     });
 
-    // If Resend API Key is provided and recipients have providerMessageIds, sync live status from Resend
-    if (apiKey && typeof apiKey === 'string' && apiKey.startsWith('re_') && Array.isArray(recipients)) {
+    const effectiveApiKey = apiKey || process.env.RESEND_API_KEY || process.env.SMTP_PASS || getSavedSmtpConfig()?.pass;
+
+    // If Resend API Key is available and recipients have providerMessageIds, sync live status from Resend
+    if (effectiveApiKey && typeof effectiveApiKey === 'string' && (effectiveApiKey.startsWith('re_') || effectiveApiKey.includes('resend')) && Array.isArray(recipients)) {
       const candidates = recipients.filter((r: { providerMessageId?: string }) => Boolean(r.providerMessageId)).slice(0, 50);
 
       await Promise.all(
         candidates.map(async (r: { id: string; providerMessageId: string }) => {
           try {
             const res = await fetch(`https://api.resend.com/emails/${r.providerMessageId}`, {
-              headers: { Authorization: `Bearer ${apiKey.trim()}` },
+              headers: { Authorization: `Bearer ${effectiveApiKey.trim()}` },
             });
             if (res.ok) {
               const data = await res.json();
-              // Resend returns last_event as "email.opened", "email.delivered", "email.clicked" etc.
-              // Normalize by stripping the "email." prefix and lowercasing
               const rawEvent = (data.last_event || '').toLowerCase();
-              const lastEvent = rawEvent.replace('email.', '');
 
-              console.log(`[Resend Sync] recipient=${r.id} msgId=${r.providerMessageId} last_event="${rawEvent}" normalized="${lastEvent}"`);
+              console.log(`[Resend Sync] recipient=${r.id} msgId=${r.providerMessageId} last_event="${rawEvent}"`);
 
-              if (lastEvent === 'opened' || lastEvent === 'clicked') {
+              if (rawEvent.includes('open') || rawEvent.includes('click')) {
                 const openEvent: TrackingEvent = {
                   batchId,
                   recipientId: r.id,
@@ -65,7 +64,7 @@ export async function POST(req: NextRequest) {
                 eventsMap.set(`${r.id}_OPEN`, openEvent);
                 // Persist so it survives across serverless invocations
                 recordTrackingEvent(openEvent);
-              } else if (lastEvent === 'delivered') {
+              } else if (rawEvent.includes('deliver')) {
                 const deliveredEvent: TrackingEvent = {
                   batchId,
                   recipientId: r.id,

@@ -112,11 +112,56 @@ export const ReportStep: React.FC<ReportStepProps> = ({
         }
       }
 
-      // NOTE: We intentionally do NOT fetch the server-side batch here.
-      // On Vercel (serverless), /tmp is ephemeral and each lambda gets a fresh filesystem.
-      // The server-side batch in /tmp does not have tracking updates, so fetching it would
-      // overwrite client-side SEEN statuses with stale DELIVERED/SENT data, causing "seen"
-      // to appear broken. The Resend API sync above is the single source of truth.
+      // 2. Safely merge server batch if available (Forward-only: upgrades to SEEN / DELIVERED, NEVER downgrades)
+      try {
+        const batchRes = await fetch(`/api/batch/${batchIdRef.current}`);
+        if (batchRes.ok) {
+          const batchData = await batchRes.json().catch(() => ({}));
+          if (batchData.batch && Array.isArray(batchData.batch.recipients)) {
+            const currentBatch = batch;
+            let hasBatchUpdates = false;
+            const mergedRecipients = currentBatch.recipients.map((origR) => {
+              const serverR = (batchData.batch.recipients as MatchedRecipient[]).find((r: MatchedRecipient) => r.id === origR.id);
+              if (!serverR) return origR;
+
+              // Forward-only upgrade: SEEN is permanent
+              if (serverR.sendStatus === 'SEEN' && origR.sendStatus !== 'SEEN') {
+                hasBatchUpdates = true;
+                return {
+                  ...origR,
+                  sendStatus: 'SEEN' as const,
+                  seenAt: origR.seenAt || serverR.seenAt || new Date().toISOString(),
+                  deliveredAt: origR.deliveredAt || serverR.deliveredAt || new Date().toISOString(),
+                };
+              }
+              if (serverR.sendStatus === 'DELIVERED' && origR.sendStatus === 'SENT') {
+                hasBatchUpdates = true;
+                return {
+                  ...origR,
+                  sendStatus: 'DELIVERED' as const,
+                  deliveredAt: origR.deliveredAt || serverR.deliveredAt || new Date().toISOString(),
+                };
+              }
+              return origR;
+            });
+
+            if (hasBatchUpdates) {
+              const updatedBatch: BatchSession = {
+                ...currentBatch,
+                recipients: mergedRecipients,
+                stats: {
+                  ...currentBatch.stats,
+                  seen: mergedRecipients.filter((r) => r.sendStatus === 'SEEN').length,
+                  delivered: mergedRecipients.filter((r) => r.sendStatus === 'DELIVERED' || r.sendStatus === 'SEEN').length,
+                },
+              };
+              onUpdateBatchRef.current(updatedBatch);
+            }
+          }
+        }
+      } catch {
+        // Non-blocking server batch sync
+      }
 
       setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err) {
