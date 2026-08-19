@@ -14,7 +14,7 @@ import {
   Info,
   WifiOff,
 } from 'lucide-react';
-import { BatchSession } from '@/lib/types';
+import { BatchSession, MatchedRecipient } from '@/lib/types';
 
 interface ReportStepProps {
   batch: BatchSession;
@@ -193,23 +193,74 @@ export const ReportStep: React.FC<ReportStepProps> = ({
   const handleRetryFailed = async () => {
     setIsRetrying(true);
     try {
-      const res = await fetch('/api/batch/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          batchId: batch.id,
-          action: 'START',
-          onlyFailed: true,
-        }),
-      });
+      let currentBatch = batch;
+      let done = false;
 
-      const data = await res.json();
-      if (data.success) {
-        const fetchRes = await fetch(`/api/batch/${batch.id}`);
-        const fetchData = await fetchRes.json();
-        if (fetchData.batch) {
-          onUpdateBatch(fetchData.batch);
+      while (!done) {
+        const failedCandidates = currentBatch.recipients.filter(
+          (r) => r.sendStatus === 'FAILED' && r.status !== 'EXCLUDED' && r.status !== 'UNMATCHED'
+        );
+
+        if (failedCandidates.length === 0) {
+          done = true;
+          break;
         }
+
+        const chunk = failedCandidates.slice(0, 2);
+        const chunkPdfIds = new Set(chunk.map((r) => r.matchedPdfId).filter(Boolean));
+        const chunkPdfNames = new Set(chunk.map((r) => r.matchedPdfName).filter(Boolean));
+
+        const chunkPdfs = (currentBatch.pdfs || []).filter(
+          (p) => chunkPdfIds.has(p.id) || chunkPdfNames.has(p.filename) || chunkPdfNames.has(p.originalName)
+        );
+
+        const chunkPayloadBatch: BatchSession = {
+          ...currentBatch,
+          pdfs: chunkPdfs,
+        };
+
+        const res = await fetch('/api/batch/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            batchId: currentBatch.id,
+            action: 'START',
+            smtpConfig: currentBatch.smtpConfig,
+            onlyFailed: true,
+            origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+            batch: chunkPayloadBatch,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) {
+          console.warn('Retry chunk failed:', data.error);
+          break;
+        }
+
+        if (data.batch) {
+          const updatedRecipients = currentBatch.recipients.map((r) => {
+            const upd = (data.batch?.recipients as MatchedRecipient[] | undefined)?.find((u: MatchedRecipient) => u.id === r.id);
+            return upd ? { ...r, ...upd } : r;
+          });
+
+          const mergedBatch: BatchSession = {
+            ...currentBatch,
+            ...data.batch,
+            recipients: updatedRecipients,
+            pdfs: currentBatch.pdfs,
+          };
+
+          currentBatch = mergedBatch;
+          onUpdateBatch(mergedBatch);
+        }
+
+        if (data.done || data.batch?.status === 'COMPLETED') {
+          done = true;
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
       }
     } catch (err) {
       console.error('Failed to retry failed sends:', err);
