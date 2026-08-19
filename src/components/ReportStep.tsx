@@ -55,7 +55,7 @@ export const ReportStep: React.FC<ReportStepProps> = ({
   // Stable fetch function
   const fetchBatchStatus = useCallback(async () => {
     try {
-      // 1. Fetch live tracking events (including provider-level open tracking)
+      // 1. Fetch live tracking events (including provider-level open tracking via Resend API)
       const eventsRes = await fetch('/api/track/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,7 +63,7 @@ export const ReportStep: React.FC<ReportStepProps> = ({
           batchId: batchIdRef.current,
           apiKey: batch.smtpConfig?.pass,
           recipients: batch.recipients
-            .filter(r => r.sendStatus !== 'SEEN' && r.providerMessageId)
+            .filter(r => r.sendStatus !== 'SEEN')
             .map((r) => ({
               id: r.id,
               providerMessageId: r.providerMessageId,
@@ -112,14 +112,12 @@ export const ReportStep: React.FC<ReportStepProps> = ({
         }
       }
 
-      // 2. Fetch server batch if available
-      const res = await fetch(`/api/batch/${batchIdRef.current}`);
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (data.batch) {
-          onUpdateBatchRef.current(data.batch);
-        }
-      }
+      // NOTE: We intentionally do NOT fetch the server-side batch here.
+      // On Vercel (serverless), /tmp is ephemeral and each lambda gets a fresh filesystem.
+      // The server-side batch in /tmp does not have tracking updates, so fetching it would
+      // overwrite client-side SEEN statuses with stale DELIVERED/SENT data, causing "seen"
+      // to appear broken. The Resend API sync above is the single source of truth.
+
       setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     } catch (err) {
       console.error('Polling batch status failed:', err);

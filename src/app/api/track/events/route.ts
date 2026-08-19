@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getTrackingEvents, TrackingEvent } from '@/lib/storage';
+import { getTrackingEvents, recordTrackingEvent, TrackingEvent } from '@/lib/storage';
 
 export async function GET(req: NextRequest) {
   try {
@@ -45,23 +45,32 @@ export async function POST(req: NextRequest) {
             });
             if (res.ok) {
               const data = await res.json();
-              const lastEvent = (data.last_event || '').toLowerCase();
-              const now = new Date().toISOString();
+              // Resend returns last_event as "email.opened", "email.delivered", "email.clicked" etc.
+              // Normalize by stripping the "email." prefix and lowercasing
+              const rawEvent = (data.last_event || '').toLowerCase();
+              const lastEvent = rawEvent.replace('email.', '');
+
+              console.log(`[Resend Sync] recipient=${r.id} msgId=${r.providerMessageId} last_event="${rawEvent}" normalized="${lastEvent}"`);
 
               if (lastEvent === 'opened' || lastEvent === 'clicked') {
-                eventsMap.set(`${r.id}_OPEN`, {
+                const openEvent: TrackingEvent = {
                   batchId,
                   recipientId: r.id,
                   eventType: 'OPEN',
-                  timestamp: data.created_at || now,
-                });
+                  timestamp: data.created_at || new Date().toISOString(),
+                };
+                eventsMap.set(`${r.id}_OPEN`, openEvent);
+                // Persist so it survives across serverless invocations
+                recordTrackingEvent(openEvent);
               } else if (lastEvent === 'delivered') {
-                eventsMap.set(`${r.id}_DELIVERED`, {
+                const deliveredEvent: TrackingEvent = {
                   batchId,
                   recipientId: r.id,
                   eventType: 'DELIVERED',
-                  timestamp: data.created_at || now,
-                });
+                  timestamp: data.created_at || new Date().toISOString(),
+                };
+                eventsMap.set(`${r.id}_DELIVERED`, deliveredEvent);
+                recordTrackingEvent(deliveredEvent);
               }
             }
           } catch (e) {
