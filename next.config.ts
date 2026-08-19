@@ -3,6 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   serverExternalPackages: ['nodemailer', 'xlsx', 'jszip', 'papaparse'],
 
+  // Allow larger request bodies for PDF-bearing API calls (default 1MB is too small)
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
+  },
+
   // Security headers applied at the framework level
   headers: async () => [
     {

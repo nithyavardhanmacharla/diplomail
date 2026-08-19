@@ -608,9 +608,22 @@ export async function processNextBatchChunk(
     throw new Error('Batch session not found.');
   }
 
-  // If inputBatch provided and has PDF buffers, ensure they are merged
-  if (inputBatch?.pdfs && (!batch.pdfs || batch.pdfs.length === 0 || !batch.pdfs[0].contentBase64)) {
-    batch.pdfs = inputBatch.pdfs;
+  // Always prefer inputBatch PDFs which come fresh from the browser with contentBase64 data.
+  // The disk-persisted batch has contentBase64 stripped (to prevent /tmp overflow),
+  // so we must merge the incoming PDFs to restore the actual file content.
+  if (inputBatch?.pdfs && inputBatch.pdfs.length > 0) {
+    if (!batch.pdfs || batch.pdfs.length === 0) {
+      batch.pdfs = inputBatch.pdfs;
+    } else {
+      for (const incPdf of inputBatch.pdfs) {
+        const idx = batch.pdfs.findIndex((p) => p.id === incPdf.id || p.filename === incPdf.filename);
+        if (idx >= 0) {
+          batch.pdfs[idx] = { ...batch.pdfs[idx], ...incPdf };
+        } else {
+          batch.pdfs.push(incPdf);
+        }
+      }
+    }
   }
 
   if (batch.status === 'PAUSED') {

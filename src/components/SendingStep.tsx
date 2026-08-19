@@ -83,54 +83,76 @@ export const SendingStep: React.FC<SendingStepProps> = ({
           pdfs: chunkPdfs,
         };
 
-        const res = await fetch('/api/batch/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            batchId: currentBatch.id,
-            action: 'START',
-            smtpConfig,
-            onlyFailed,
-            origin: typeof window !== 'undefined' ? window.location.origin : undefined,
-            batch: chunkPayloadBatch,
-          }),
-        });
+        // Retry logic: up to 2 retries per chunk for transient network errors
+        let lastChunkError: string | null = null;
+        let chunkSuccess = false;
 
-        let data: { success?: boolean; error?: string; batch?: BatchSession; done?: boolean } = {};
-        try {
-          data = await res.json();
-        } catch {
-          throw new Error(`Server response error (HTTP ${res.status}). Please check your connection.`);
-        }
+        for (let attempt = 0; attempt < 3 && !chunkSuccess; attempt++) {
+          try {
+            const res = await fetch('/api/batch/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                batchId: currentBatch.id,
+                action: 'START',
+                smtpConfig,
+                onlyFailed,
+                origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+                batch: chunkPayloadBatch,
+              }),
+            });
 
-        if (!res.ok || !data.success) {
-          throw new Error(data.error || 'Failed to dispatch email batch.');
-        }
+            let data: { success?: boolean; error?: string; batch?: BatchSession; done?: boolean } = {};
+            try {
+              data = await res.json();
+            } catch {
+              throw new Error(`Server response error (HTTP ${res.status}). Please check your connection.`);
+            }
 
-        if (data.batch) {
-          // Merge server results into client batch while preserving all local PDFs
-          const updatedRecipients = currentBatch.recipients.map((r) => {
-            const upd = data.batch?.recipients?.find((u) => u.id === r.id);
-            return upd ? { ...r, ...upd } : r;
-          });
+            if (!res.ok || !data.success) {
+              throw new Error(data.error || 'Failed to dispatch email batch.');
+            }
 
-          const mergedBatch: BatchSession = {
-            ...currentBatch,
-            ...data.batch,
-            recipients: updatedRecipients,
-            pdfs: currentBatch.pdfs,
-          };
+            chunkSuccess = true;
+            lastChunkError = null;
 
-          currentBatch = mergedBatch;
-          onUpdateBatch(mergedBatch);
-        }
+            if (data.batch) {
+              // Merge server results into client batch while preserving all local PDFs
+              const updatedRecipients = currentBatch.recipients.map((r) => {
+                const upd = data.batch?.recipients?.find((u) => u.id === r.id);
+                return upd ? { ...r, ...upd } : r;
+              });
 
-        if (data.done || data.batch?.status === 'COMPLETED' || data.batch?.status === 'PAUSED') {
-          done = true;
-          if (data.batch?.status === 'PAUSED') {
-            setIsPaused(true);
+              const mergedBatch: BatchSession = {
+                ...currentBatch,
+                ...data.batch,
+                recipients: updatedRecipients,
+                pdfs: currentBatch.pdfs,
+              };
+
+              currentBatch = mergedBatch;
+              onUpdateBatch(mergedBatch);
+            }
+
+            if (data.done || data.batch?.status === 'COMPLETED' || data.batch?.status === 'PAUSED') {
+              done = true;
+              if (data.batch?.status === 'PAUSED') {
+                setIsPaused(true);
+              }
+              break;
+            }
+          } catch (retryErr: unknown) {
+            lastChunkError = retryErr instanceof Error ? retryErr.message : 'Network error';
+            console.warn(`Chunk attempt ${attempt + 1}/3 failed:`, lastChunkError);
+            if (attempt < 2) {
+              // Exponential backoff: 1s, 3s
+              await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 1500));
+            }
           }
-          break;
+        }
+
+        if (!chunkSuccess && lastChunkError) {
+          throw new Error(lastChunkError);
         }
 
         // Brief delay between chunks

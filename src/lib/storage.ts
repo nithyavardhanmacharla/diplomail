@@ -138,10 +138,22 @@ export function saveBatch(batch: BatchSession): void {
     }
   }
 
+  // Create a serialization-safe copy that strips contentBase64 from PDFs.
+  // On Vercel /tmp, writing 10MB+ of base64 per save causes silent failures.
+  // The PDFs are already saved as individual files in the uploads directory above.
+  const batchForDisk = {
+    ...batch,
+    pdfs: (batch.pdfs || []).map((p) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { contentBase64, ...rest } = p;
+      return rest;
+    }),
+  };
+
   if (index >= 0) {
-    batches[index] = batch;
+    batches[index] = batchForDisk as BatchSession;
   } else {
-    batches.unshift(batch);
+    batches.unshift(batchForDisk as BatchSession);
   }
 
   try {
