@@ -60,7 +60,7 @@ export const DEFAULT_EMAIL_TEMPLATES = [
     <p>{{customMessage}}</p>
     <div style="text-align: center; margin: 28px 0;">
       <a href="{{trackingUrl}}" target="_blank" style="background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 10px; font-weight: bold; display: inline-block; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);">
-        🎓 Verify Certificate Authenticity
+        📥 Download Certificate
       </a>
     </div>
     <p style="font-size: 13px; color: #64748b;">Your personalized certificate (<code>{{filename}}</code>) is also attached directly to this email as a PDF document.</p>
@@ -68,7 +68,7 @@ export const DEFAULT_EMAIL_TEMPLATES = [
     <p style="font-size: 14px; color: #94a3b8; margin: 0; text-align: center;">Sent via DiploMail</p>
   </div>
 </div>`,
-    bodyText: `Dear {{name}},\n\nWe are delighted to present your official Certificate of Completion attached to this email.\n\nName: {{name}}\nEmail: {{email}}\n\n{{customMessage}}\n\nVerify Certificate Authenticity: {{trackingUrl}}\n\nPlease find your personalized certificate ({{filename}}) attached.\n\nBest regards,\nDiploMail`,
+    bodyText: `Dear {{name}},\n\nWe are delighted to present your official Certificate of Completion attached to this email.\n\nName: {{name}}\nEmail: {{email}}\n\n{{customMessage}}\n\nDownload Certificate: {{trackingUrl}}\n\nPlease find your personalized certificate ({{filename}}) attached.\n\nBest regards,\nDiploMail`,
     isDefault: true,
   },
   {
@@ -79,10 +79,10 @@ export const DEFAULT_EMAIL_TEMPLATES = [
   <h2>Hello {{name}},</h2>
   <p>Please find your requested PDF document (<strong>{{filename}}</strong>) attached to this email.</p>
   <p>{{customMessage}}</p>
-  <p style="margin: 20px 0;"><a href="{{trackingUrl}}" style="background-color: #4f46e5; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">View Document</a></p>
+  <p style="margin: 20px 0;"><a href="{{trackingUrl}}" style="background-color: #4f46e5; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">📥 Download Certificate</a></p>
   <p>Thank you!</p>
 </div>`,
-    bodyText: `Hello {{name}},\n\nPlease find your requested PDF document ({{filename}}) attached to this email.\n\nView Document: {{trackingUrl}}\n\n{{customMessage}}\n\nThank you!`,
+    bodyText: `Hello {{name}},\n\nPlease find your requested PDF document ({{filename}}) attached to this email.\n\nDownload Certificate: {{trackingUrl}}\n\n{{customMessage}}\n\nThank you!`,
     isDefault: false,
   }
 ];

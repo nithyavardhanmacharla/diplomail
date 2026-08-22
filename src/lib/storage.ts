@@ -93,6 +93,23 @@ export function getPdfBufferById(id: string): Buffer | null {
   return null;
 }
 
+export function getPdfBufferByFilename(filename: string): Buffer | null {
+  ensureDirectories();
+  const uploadsDir = getUploadsDir();
+  try {
+    const files = fs.readdirSync(uploadsDir);
+    const sanitized = filename.replace(/[^a-zA-Z0-9_.-]/g, '_');
+    const matchedFile = files.find((f) => f.endsWith(`_${sanitized}`) || f === sanitized || f.includes(sanitized));
+    if (matchedFile) {
+      const fullPath = path.join(uploadsDir, matchedFile);
+      return fs.readFileSync(fullPath);
+    }
+  } catch (err) {
+    console.error('Failed to find PDF file by filename:', filename, err);
+  }
+  return null;
+}
+
 export function getAllBatches(): BatchSession[] {
   ensureDirectories();
   const file = getBatchesFile();
@@ -184,7 +201,10 @@ export function getAllTemplates(): EmailTemplate[] {
   }
   try {
     const raw = fs.readFileSync(file, 'utf-8');
-    return JSON.parse(raw);
+    const loaded: EmailTemplate[] = JSON.parse(raw);
+    const defaultIds = DEFAULT_EMAIL_TEMPLATES.map((t) => t.id);
+    const custom = Array.isArray(loaded) ? loaded.filter((t) => !defaultIds.includes(t.id)) : [];
+    return [...DEFAULT_EMAIL_TEMPLATES, ...custom];
   } catch {
     return DEFAULT_EMAIL_TEMPLATES;
   }

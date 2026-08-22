@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBatchById, saveBatch, getUploadedPdfBuffer, getPdfBufferById, recordTrackingEvent } from '@/lib/storage';
+import { getBatchById, saveBatch, getUploadedPdfBuffer, getPdfBufferById, getPdfBufferByFilename, recordTrackingEvent } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
           recipientName = recipientItem.recipient?.name || 'Recipient';
           recipientEmail = recipientItem.recipient?.email || '';
 
-          // Verified 100% Genuine Human Open (Recipient clicked their certificate link)
+          // Verified 100% Genuine Human Open (Recipient clicked their certificate download link)
           recipientItem.sendStatus = 'SEEN';
           recipientItem.seenAt = recipientItem.seenAt || now;
           recipientItem.deliveredAt = recipientItem.deliveredAt || now;
@@ -45,17 +45,19 @@ export async function GET(req: NextRequest) {
           batch.stats.delivered = batch.recipients.filter((r) => r.sendStatus === 'DELIVERED' || r.sendStatus === 'SEEN').length;
           saveBatch(batch);
 
-          // Serve PDF certificate inline if available
-          if (recipientItem.matchedPdfId) {
+          // Serve PDF certificate inline/download if available
+          if (recipientItem.matchedPdfId || recipientItem.matchedPdfName) {
             const pdfInfo = batch.pdfs.find(
               (p) =>
-                p.id === recipientItem.matchedPdfId ||
+                (recipientItem.matchedPdfId && p.id === recipientItem.matchedPdfId) ||
                 p.filename === recipientItem.matchedPdfName ||
                 p.originalName === recipientItem.matchedPdfName
             );
+            
+            certificateFilename = pdfInfo?.filename || pdfInfo?.originalName || recipientItem.matchedPdfName || 'Certificate.pdf';
+            let buffer: Buffer | null = null;
+            
             if (pdfInfo) {
-              certificateFilename = pdfInfo.filename || pdfInfo.originalName || 'Certificate.pdf';
-              let buffer: Buffer | null = null;
               if (pdfInfo.contentBase64) {
                 buffer = Buffer.from(pdfInfo.contentBase64, 'base64');
               } else if (pdfInfo.url) {
@@ -63,16 +65,24 @@ export async function GET(req: NextRequest) {
               } else if (pdfInfo.id) {
                 buffer = getPdfBufferById(pdfInfo.id);
               }
+            }
 
-              if (buffer) {
-                return new NextResponse(new Uint8Array(buffer), {
-                  status: 200,
-                  headers: {
-                    'Content-Type': 'application/pdf',
-                    'Content-Disposition': `inline; filename="${certificateFilename}"`,
-                  },
-                });
-              }
+            if (!buffer && recipientItem.matchedPdfId) {
+              buffer = getPdfBufferById(recipientItem.matchedPdfId);
+            }
+
+            if (!buffer && recipientItem.matchedPdfName) {
+              buffer = getPdfBufferByFilename(recipientItem.matchedPdfName);
+            }
+
+            if (buffer) {
+              return new NextResponse(new Uint8Array(buffer), {
+                status: 200,
+                headers: {
+                  'Content-Type': 'application/pdf',
+                  'Content-Disposition': `inline; filename="${certificateFilename}"`,
+                },
+              });
             }
           }
         }
