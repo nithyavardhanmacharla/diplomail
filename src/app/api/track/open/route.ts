@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
     if (batchId && recipientId && !isScanner) {
       const now = new Date().toISOString();
 
-      // 1. Record persistent tracking event (OPEN = email preview / image loaded)
+      // 1. Record persistent tracking event
       recordTrackingEvent({
         batchId,
         recipientId,
@@ -74,22 +74,21 @@ export async function GET(req: NextRequest) {
         userAgent,
       });
 
-      // 2. Update batch on disk: Email preview/pixel confirms inbox delivery (DELIVERED), NOT certificate download (SEEN)
+      // 2. Update batch on disk if available
       const batch = getBatchById(batchId);
       if (batch) {
         const recipient = batch.recipients.find((r) => r.id === recipientId);
         if (recipient) {
-          recipient.deliveredAt = recipient.deliveredAt || now;
+          if (recipient.sendStatus !== 'SEEN') {
+            recipient.sendStatus = 'SEEN';
+            recipient.seenAt = recipient.seenAt || now;
+            recipient.deliveredAt = recipient.deliveredAt || now;
 
-          // Only upgrade from SENT/PENDING to DELIVERED. Never downgrade SEEN.
-          if (recipient.sendStatus === 'SENT' || recipient.sendStatus === 'PENDING' || recipient.sendStatus === 'SENDING') {
-            recipient.sendStatus = 'DELIVERED';
+            // Recalculate stats
+            batch.stats.seen = batch.recipients.filter((r) => r.sendStatus === 'SEEN').length;
+            batch.stats.delivered = batch.recipients.filter((r) => r.sendStatus === 'DELIVERED' || r.sendStatus === 'SEEN').length;
+            saveBatch(batch);
           }
-
-          // Recalculate stats
-          batch.stats.seen = batch.recipients.filter((r) => r.sendStatus === 'SEEN').length;
-          batch.stats.delivered = batch.recipients.filter((r) => r.sendStatus === 'DELIVERED' || r.sendStatus === 'SEEN').length;
-          saveBatch(batch);
         }
       }
     }

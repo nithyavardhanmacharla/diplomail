@@ -30,10 +30,10 @@ export async function POST(req: NextRequest) {
       let targetStatus: SendStatus | null = null;
       let failReason: string | undefined = undefined;
 
-      if (eventType.includes('click')) {
-        targetStatus = 'SEEN';
-      } else if (eventType.includes('deliver') || eventType.includes('open') || eventType.includes('preview')) {
+      if (eventType.includes('deliver')) {
         targetStatus = 'DELIVERED';
+      } else if (eventType.includes('open') || eventType.includes('seen')) {
+        targetStatus = 'SEEN';
       } else if (eventType.includes('bounce') || eventType.includes('drop') || eventType.includes('fail')) {
         targetStatus = 'FAILED';
         failReason = rawEvent.reason || rawEvent.response || 'Email bounced or dropped by provider.';

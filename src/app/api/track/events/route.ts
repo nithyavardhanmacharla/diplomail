@@ -54,16 +54,17 @@ export async function POST(req: NextRequest) {
 
               console.log(`[Resend Sync] recipient=${r.id} msgId=${r.providerMessageId} last_event="${rawEvent}"`);
 
-              if (rawEvent.includes('click')) {
-                const clickEvent: TrackingEvent = {
+              if (rawEvent.includes('open') || rawEvent.includes('click')) {
+                const openEvent: TrackingEvent = {
                   batchId,
                   recipientId: r.id,
-                  eventType: 'CLICK',
+                  eventType: 'OPEN',
                   timestamp: data.created_at || new Date().toISOString(),
                 };
-                eventsMap.set(`${r.id}_CLICK`, clickEvent);
-                recordTrackingEvent(clickEvent);
-              } else if (rawEvent.includes('open') || rawEvent.includes('deliver')) {
+                eventsMap.set(`${r.id}_OPEN`, openEvent);
+                // Persist so it survives across serverless invocations
+                recordTrackingEvent(openEvent);
+              } else if (rawEvent.includes('deliver')) {
                 const deliveredEvent: TrackingEvent = {
                   batchId,
                   recipientId: r.id,

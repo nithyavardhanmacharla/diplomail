@@ -394,7 +394,7 @@ export const SendingStep: React.FC<SendingStepProps> = ({
           <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
             <div className="px-4 py-3 bg-slate-950/80 border-b border-slate-800 font-semibold text-xs text-slate-300 uppercase tracking-wider flex items-center justify-between">
               <span>Live Queue Status</span>
-              <span className="text-[11px] text-slate-400 normal-case">✓ Sent | ✓✓ Delivered | ✓✓ Blue Seen (Certificate Downloaded)</span>
+              <span className="text-[11px] text-slate-400 normal-case">✓ Sent | ✓✓ Delivered | ✓✓ Blue Seen</span>
             </div>
 
             <div className="divide-y divide-slate-800/60 max-h-[420px] overflow-y-auto">

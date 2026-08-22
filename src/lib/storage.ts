@@ -78,13 +78,11 @@ export function getUploadedPdfBuffer(filePath: string): Buffer | null {
 }
 
 export function getPdfBufferById(id: string): Buffer | null {
-  if (!id) return null;
   ensureDirectories();
   const uploadsDir = getUploadsDir();
   try {
-    if (!fs.existsSync(uploadsDir)) return null;
     const files = fs.readdirSync(uploadsDir);
-    const matchedFile = files.find((f) => f.startsWith(`${id}_`) || f === id || f.toLowerCase().startsWith(`${id.toLowerCase()}_`));
+    const matchedFile = files.find((f) => f.startsWith(`${id}_`) || f === id);
     if (matchedFile) {
       const fullPath = path.join(uploadsDir, matchedFile);
       return fs.readFileSync(fullPath);
@@ -96,56 +94,18 @@ export function getPdfBufferById(id: string): Buffer | null {
 }
 
 export function getPdfBufferByFilename(filename: string): Buffer | null {
-  if (!filename) return null;
   ensureDirectories();
   const uploadsDir = getUploadsDir();
   try {
-    if (!fs.existsSync(uploadsDir)) return null;
     const files = fs.readdirSync(uploadsDir);
     const sanitized = filename.replace(/[^a-zA-Z0-9_.-]/g, '_');
-    const baseName = filename.replace(/\.pdf$/i, '').replace(/[^a-zA-Z0-9_.-]/g, '_');
-
-    const matchedFile = files.find((f) => {
-      const fLower = f.toLowerCase();
-      const sLower = sanitized.toLowerCase();
-      const bLower = baseName.toLowerCase();
-
-      return (
-        f.endsWith(`_${sanitized}`) ||
-        f === sanitized ||
-        f.includes(sanitized) ||
-        fLower.endsWith(`_${sLower}`) ||
-        fLower.includes(sLower) ||
-        (bLower.length > 2 && fLower.includes(bLower))
-      );
-    });
-
+    const matchedFile = files.find((f) => f.endsWith(`_${sanitized}`) || f === sanitized || f.includes(sanitized));
     if (matchedFile) {
       const fullPath = path.join(uploadsDir, matchedFile);
       return fs.readFileSync(fullPath);
     }
   } catch (err) {
     console.error('Failed to find PDF file by filename:', filename, err);
-  }
-  return null;
-}
-
-export function getPdfBufferByRecipientName(recipientName: string): Buffer | null {
-  if (!recipientName || recipientName.trim().length < 2) return null;
-  ensureDirectories();
-  const uploadsDir = getUploadsDir();
-  try {
-    if (!fs.existsSync(uploadsDir)) return null;
-    const files = fs.readdirSync(uploadsDir);
-    const sanitized = recipientName.trim().replace(/[^a-zA-Z0-9_.-]/g, '_').toLowerCase();
-
-    const matchedFile = files.find((f) => f.toLowerCase().includes(sanitized));
-    if (matchedFile) {
-      const fullPath = path.join(uploadsDir, matchedFile);
-      return fs.readFileSync(fullPath);
-    }
-  } catch (err) {
-    console.error('Failed to find PDF file by recipient name:', recipientName, err);
   }
   return null;
 }
