@@ -52,17 +52,25 @@ export const ReportStep: React.FC<ReportStepProps> = ({
     batchIdRef.current = batch.id;
   }, [batch.id]);
 
-  // Stable fetch function
+  // Keep a ref to the latest batch prop so polling never uses a stale closure
+  const batchRef = useRef(batch);
+  useEffect(() => {
+    batchRef.current = batch;
+  }, [batch]);
+
+  // Stable fetch function — uses refs to always read fresh state, never stale closures
   const fetchBatchStatus = useCallback(async () => {
     try {
+      const latestBatch = batchRef.current;
+
       // 1. Fetch live tracking events (including provider-level open tracking via Resend API)
       const eventsRes = await fetch('/api/track/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           batchId: batchIdRef.current,
-          apiKey: batch.smtpConfig?.pass,
-          recipients: batch.recipients
+          apiKey: latestBatch.smtpConfig?.pass,
+          recipients: latestBatch.recipients
             .filter(r => r.sendStatus !== 'SEEN')
             .map((r) => ({
               id: r.id,
@@ -81,7 +89,8 @@ export const ReportStep: React.FC<ReportStepProps> = ({
         );
 
         if (openedRecipientIds.size > 0) {
-          const currentBatch = batch;
+          // Re-read the latest batch ref to avoid overwriting concurrent updates
+          const currentBatch = batchRef.current;
           let hasUpdates = false;
           const updatedRecipients = currentBatch.recipients.map((r) => {
             if (openedRecipientIds.has(r.id) && r.sendStatus !== 'SEEN') {
@@ -118,14 +127,17 @@ export const ReportStep: React.FC<ReportStepProps> = ({
         if (batchRes.ok) {
           const batchData = await batchRes.json().catch(() => ({}));
           if (batchData.batch && Array.isArray(batchData.batch.recipients)) {
-            const currentBatch = batch;
+            // Re-read fresh ref — events step above may have already updated it
+            const currentBatch = batchRef.current;
             let hasBatchUpdates = false;
             const mergedRecipients = currentBatch.recipients.map((origR) => {
               const serverR = (batchData.batch.recipients as MatchedRecipient[]).find((r: MatchedRecipient) => r.id === origR.id);
               if (!serverR) return origR;
 
-              // Forward-only upgrade: SEEN is permanent
-              if (serverR.sendStatus === 'SEEN' && origR.sendStatus !== 'SEEN') {
+              // Forward-only upgrade: SEEN is permanent, never downgrade
+              if (origR.sendStatus === 'SEEN') return origR;
+
+              if (serverR.sendStatus === 'SEEN') {
                 hasBatchUpdates = true;
                 return {
                   ...origR,
@@ -167,9 +179,9 @@ export const ReportStep: React.FC<ReportStepProps> = ({
     } catch (err) {
       console.error('Polling batch status failed:', err);
     }
-  }, [batch]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- uses refs intentionally for stable polling
 
-  // Live polling for status updates every 5 seconds — stabilized with refs
+  // Live polling for status updates every 5 seconds — stable interval, never destroyed on batch changes
   useEffect(() => {
     const interval = setInterval(fetchBatchStatus, 5000);
     return () => clearInterval(interval);
