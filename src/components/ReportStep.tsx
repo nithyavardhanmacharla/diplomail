@@ -82,24 +82,43 @@ export const ReportStep: React.FC<ReportStepProps> = ({
       const eventsData = await eventsRes.json().catch(() => ({}));
 
       if (eventsData.success && Array.isArray(eventsData.events) && eventsData.events.length > 0) {
-        const openedRecipientIds = new Set(
+        // Genuine Certificate Download / Click -> Marks SEEN
+        const clickedRecipientIds = new Set(
           eventsData.events
-            .filter((e: { eventType: string }) => e.eventType === 'OPEN' || e.eventType === 'CLICK')
+            .filter((e: { eventType: string }) => e.eventType === 'CLICK')
             .map((e: { recipientId: string }) => e.recipientId)
         );
 
-        if (openedRecipientIds.size > 0) {
+        // Email preview / image pixel load / provider delivery -> Marks DELIVERED
+        const deliveredRecipientIds = new Set(
+          eventsData.events
+            .filter((e: { eventType: string }) => e.eventType === 'DELIVERED' || e.eventType === 'OPEN')
+            .map((e: { recipientId: string }) => e.recipientId)
+        );
+
+        if (clickedRecipientIds.size > 0 || deliveredRecipientIds.size > 0) {
           // Re-read the latest batch ref to avoid overwriting concurrent updates
           const currentBatch = batchRef.current;
           let hasUpdates = false;
           const updatedRecipients = currentBatch.recipients.map((r) => {
-            if (openedRecipientIds.has(r.id) && r.sendStatus !== 'SEEN') {
+            // 1. Certificate Downloaded / Opened -> SEEN
+            if (clickedRecipientIds.has(r.id) && r.sendStatus !== 'SEEN') {
               hasUpdates = true;
-              const ev = eventsData.events.find((e: { recipientId: string }) => e.recipientId === r.id);
+              const ev = eventsData.events.find((e: { recipientId: string; eventType: string }) => e.recipientId === r.id && e.eventType === 'CLICK');
               return {
                 ...r,
                 sendStatus: 'SEEN' as const,
                 seenAt: r.seenAt || ev?.timestamp || new Date().toISOString(),
+                deliveredAt: r.deliveredAt || ev?.timestamp || new Date().toISOString(),
+              };
+            }
+            // 2. Email delivered / previewed -> DELIVERED (if not already SEEN)
+            if (deliveredRecipientIds.has(r.id) && r.sendStatus === 'SENT') {
+              hasUpdates = true;
+              const ev = eventsData.events.find((e: { recipientId: string; eventType: string }) => e.recipientId === r.id);
+              return {
+                ...r,
+                sendStatus: 'DELIVERED' as const,
                 deliveredAt: r.deliveredAt || ev?.timestamp || new Date().toISOString(),
               };
             }
@@ -237,11 +256,11 @@ export const ReportStep: React.FC<ReportStepProps> = ({
     onUpdateBatch(updatedBatch);
     setLastRefreshedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
 
-    // 2. Trigger server tracking pixel endpoint in background
+    // 2. Trigger server click/download endpoint to record verified SEEN event
     try {
-      await fetch(`/api/track/open?batchId=${batch.id}&recipientId=${recipientId}`).catch(() => {});
+      await fetch(`/api/track/click?batchId=${batch.id}&recipientId=${recipientId}`).catch(() => {});
     } catch (err) {
-      console.error('Failed to trigger open tracking pixel:', err);
+      console.error('Failed to trigger certificate download tracking:', err);
     } finally {
       setSimulatingId(null);
     }
@@ -448,11 +467,15 @@ export const ReportStep: React.FC<ReportStepProps> = ({
         </div>
       )}
 
-      {/* Open Tracking Notice Banner */}
+      {/* Status Stages Notice Banner */}
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-4 text-xs text-slate-300 flex items-start gap-3">
         <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <span className="font-semibold text-slate-200">Open Tracking Notice:</span> Read receipt tracking (&quot;Seen&quot;) relies on a 1×1 image pixel embedded in HTML emails. Remote image loading is automatic in most webmail clients (Gmail, Yahoo), while some clients block images by default. Use the <strong>Simulate Open / Mark Seen</strong> button below to test pixel triggers.
+        <div className="flex-1 space-y-1">
+          <div><strong className="text-slate-200">How Delivery & Seen Tracking Works:</strong></div>
+          <p className="text-slate-400 leading-relaxed">
+            • <strong className="text-emerald-400">✓✓ Delivered:</strong> Verified inbox delivery & email preview (via email pixel & provider webhooks).<br />
+            • <strong className="text-sky-400">✓✓ Blue Seen:</strong> Verified <strong>Certificate Open/Download</strong> (triggered when recipient clicks <em>&quot;Download Certificate&quot;</em> in their email).
+          </p>
         </div>
         {lastRefreshedAt && (
           <span className="text-[10px] text-slate-500 shrink-0 mt-0.5">
@@ -637,17 +660,17 @@ export const ReportStep: React.FC<ReportStepProps> = ({
                         onClick={() => handleSimulateOpen(item.id)}
                         disabled={simulatingId === item.id}
                         className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/20 transition-all flex items-center gap-1.5 disabled:opacity-60"
-                        title="Simulate recipient opening email to trigger tracking pixel"
+                        title="Simulate recipient clicking 'Download Certificate' to mark certificate as Seen"
                       >
                         {simulatingId === item.id ? (
                           <>
                             <RefreshCw className="w-3 h-3 animate-spin text-sky-400" />
-                            <span>Marking...</span>
+                            <span>Downloading...</span>
                           </>
                         ) : (
                           <>
                             <Eye className="w-3 h-3 text-sky-400" />
-                            <span>Mark as Seen</span>
+                            <span>Simulate Download (Seen)</span>
                           </>
                         )}
                       </button>
