@@ -65,23 +65,20 @@ function CertificateContent() {
           </div>
         </div>
 
-        {/* Notice Info Box */}
-        <div className="bg-indigo-950/40 border border-indigo-500/30 rounded-xl p-4 text-xs text-indigo-200/90 text-left flex items-start gap-3">
-          <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-semibold text-slate-200">How to Open Your Certificate:</p>
-            <p className="text-slate-400 leading-relaxed">
-              • <strong>Attached directly to your email:</strong> Open the email attachment named <strong className="text-slate-300">{filename}</strong> in your inbox.<br />
-              • <strong>Or download below:</strong> Click the button below to download or view your certificate.
-            </p>
-          </div>
+        {/* Live Certificate PDF Viewer Embed */}
+        <div className="w-full rounded-xl overflow-hidden border border-slate-800 bg-slate-950 min-h-[380px] sm:min-h-[460px] relative shadow-2xl">
+          <iframe
+            src={`/api/track/click?name=${encodeURIComponent(name)}&filename=${encodeURIComponent(filename)}&email=${encodeURIComponent(email)}`}
+            className="w-full h-[380px] sm:h-[460px] border-0"
+            title="Official Certificate Document"
+          />
         </div>
 
         {/* Actions */}
         <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
           <a
-            href={`/api/track/click?recipientName=${encodeURIComponent(name)}&filename=${encodeURIComponent(filename)}&download=1`}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold shadow-lg shadow-indigo-500/25 transition-all"
+            href={`/api/track/click?name=${encodeURIComponent(name)}&filename=${encodeURIComponent(filename)}&email=${encodeURIComponent(email)}&download=1`}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold shadow-lg shadow-indigo-500/25 transition-all hover:scale-[1.02]"
           >
             <FileText className="w-4 h-4" />
             <span>📥 Download Certificate (.PDF)</span>
@@ -89,7 +86,7 @@ function CertificateContent() {
 
           <Link
             href="/"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors border border-slate-700/60"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium transition-colors border border-slate-700/60"
           >
             <ArrowLeft className="w-4 h-4" />
             Go to DiploMail
