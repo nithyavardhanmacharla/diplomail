@@ -2,7 +2,7 @@
 
 > **Automated Certificate & Document Email Distribution Platform**
 
-🔗 **Live Demo:** [https://diplomail.netlify.app/](https://diplomail.netlify.app/)
+🔗 **Live Demo:** [https://diplomail.vercel.app/](https://diplomail.vercel.app/)
 
 ---
 
@@ -61,4 +61,4 @@
 
 ## 🌐 Deployment
 
-Try the live version at: **[https://diplomail.netlify.app/](https://diplomail.netlify.app/)**
+Try the live version at: **[https://diplomail.vercel.app/](https://diplomail.vercel.app/)**
